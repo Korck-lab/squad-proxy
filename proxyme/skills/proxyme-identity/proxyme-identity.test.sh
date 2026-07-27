@@ -24,6 +24,15 @@
 #   noise (task-notification, [Image:...], compaction summaries, slash-command caveats).
 #   All assertions pass; the script exits 0.
 #
+# Extended (real run, 2026-07-27): AGENT-AUTHORED turns (@17-20) added to the fixture.
+#   Another agent's prose also arrives on type=="user" lines — <agent-message>,
+#   "Another Claude session sent a message", "## Context Usage", <bash-input>. Measured
+#   on a real 8.9k-line session: 231 lines passed the pre-2026-07-27 filter and only
+#   98 were human — 58% was the proxy's own voice being recycled as if the user had
+#   written it, which makes the generated identity self-referential. The widened
+#   filter excludes them; assertions prove they are neither indexed as user turns nor
+#   pulled into any window. 10/10 assertions pass.
+#
 # Run:  ./proxyme-identity.test.sh
 set -euo pipefail
 
@@ -40,7 +49,7 @@ classify() {
   jq -rc '"\(input_line_number) \(
     if .type=="assistant" then "A"
     elif (.type=="user" and (.message.content|type=="string")
-          and ((.message.content)|test("<command-name>|<system-reminder>|<local-command|<task-notification>|^\\[Image:|^\\[Request interrupted|session is being continued|Caveat: The messages below were generated")|not)) then "U"
+          and ((.message.content)|test("<command-name>|<system-reminder>|<local-command|<task-notification>|<agent-message|<bash-input|Another Claude session sent a message|## Context Usage|^\\[Image:|^\\[Request interrupted|session is being continued|Caveat: The messages below were generated")|not)) then "U"
     else "O" end)"' "$1"
 }
 
@@ -136,6 +145,20 @@ check "never pulls non-conversational offsets (1,6,8,11)" \
 # of real-session user turns are exactly this kind of noise.
 check "excludes task-notification and image-meta from user turns (widened filter)" \
   '([.[].user_line]==[3,9,13]) and all(.[]; (.user|test("<task-notification>|^\\[Image:"))|not)'
+
+# AGENT-AUTHORED turns (lines 17-20) are the bigger trap: another agent's prose also
+# lands on type=="user" lines. On a real 8.9k-line session 231 lines passed the old
+# filter and only 98 were human — 58% was the proxy's own voice being recycled. If
+# these are sampled the identity converges on the proxy instead of the user.
+check "excludes agent-message / cross-session / context-usage / bash-input turns" \
+  'all(.[]; (.user|test("<agent-message|Another Claude session sent a message|## Context Usage|<bash-input"))|not)'
+
+# The agent-noise lines must not be indexed as user turns at all, and must never be
+# pulled into any window.
+check "agent-authored offsets (17,18,19,20) are never user turns nor windowed" \
+  '([.[].user_line]|any(. >= 17)|not)
+   and ([.[].window_lines[]]|unique) as $w
+       | ([17,18,19,20]|all(. as $x | ($w|index($x))==null))'
 
 if [ "$FAILS" -ne 0 ]; then
   echo "RESULT: $FAILS assertion(s) failed" >&2

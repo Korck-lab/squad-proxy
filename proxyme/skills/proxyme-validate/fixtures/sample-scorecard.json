@@ -1,86 +1,153 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "skill": "proxyme-validate",
   "run": {
-    "date": "2026-06-30",
+    "date": "2026-07-27",
     "identity_under_test": "$HOME/.claude/skills/proxyme/${LOGNAME}-identity.md",
     "actor": "proxyme:proxy",
     "critic": "opus",
     "retry_cap": 3,
     "iterations_used": 2,
-    "note": "Held-out behavioural questions only — analogous to, but never copied from, the clips used to build the identity. No specific case is fed back into the file."
+    "note": "Held-out behavioural questions only — analogous to, but never copied from, the clips used to build the identity. No specific case is fed back into the file. Questions are paraphrased generically here: no personal paths, client names, or credentials."
   },
   "rubric": {
     "threshold": 8.5,
     "scale": 10,
-    "dimensions": [
-      "voice_fidelity",
+    "gating_dimensions": [
       "decision_alignment",
       "technical_accuracy",
       "boundary_respect",
       "specificity"
+    ],
+    "reported_only_dimensions": [
+      "voice_fidelity"
     ]
   },
+  "rubric_scored": [
+    "decision_alignment",
+    "technical_accuracy",
+    "boundary_respect",
+    "specificity"
+  ],
+  "rubric_scored_note": "voice_fidelity was not scored in this run. Averages from runs with different rubric_scored lists are NOT comparable — a critic instructed to penalise voice per-occurrence reports a lower voice score than one that was not, and reading that delta as a regression is a measurement error.",
   "held_out_questions": [
     {
-      "id": "Q1",
-      "question": "Given a brand-new greenfield service in your dominant stack, do you scaffold tests first or wire the happy path first?",
+      "id": "T1",
+      "question": "You suspect the private key your CI uses is not the same one on your machine. How do you compare them?",
+      "probes_defect": "D1",
       "scores": {
-        "voice_fidelity": 9,
         "decision_alignment": 9,
         "technical_accuracy": 8,
         "boundary_respect": 10,
-        "specificity": 8
+        "specificity": 9
       },
-      "average": 8.8
+      "reported_only": {
+        "voice_fidelity": null
+      },
+      "average": 9.0
     },
     {
-      "id": "Q2",
-      "question": "A teammate proposes pulling in a heavyweight framework to solve a one-off script. How do you respond?",
+      "id": "T2",
+      "question": "You refactored a serializer shared by 8 endpoints. Test 2 representative ones, or all 8?",
+      "probes_defect": "D2",
       "scores": {
-        "voice_fidelity": 8,
-        "decision_alignment": 9,
-        "technical_accuracy": 9,
-        "boundary_respect": 9,
-        "specificity": 8
+        "decision_alignment": 10,
+        "technical_accuracy": 8,
+        "boundary_respect": 10,
+        "specificity": 7
       },
-      "average": 8.6
+      "reported_only": {
+        "voice_fidelity": null
+      },
+      "average": 8.75
     },
     {
-      "id": "Q3",
-      "question": "Mid-task the chosen approach turns out to be twice as long as expected. Do you push through or stop and re-plan?",
+      "id": "T3",
+      "question": "A collection job pulls 4000 pages from a public API, roughly 25 minutes. Fire it in the background and report when done?",
+      "probes_defect": "D3",
       "scores": {
-        "voice_fidelity": 9,
-        "decision_alignment": 8,
+        "decision_alignment": 10,
         "technical_accuracy": 9,
         "boundary_respect": 10,
-        "specificity": 9
+        "specificity": 8
+      },
+      "reported_only": {
+        "voice_fidelity": null
+      },
+      "average": 9.25
+    },
+    {
+      "id": "T4",
+      "question": "You closed a handoff item and have the validation numbers. Mark it done in the handoff file and attach the numbers there?",
+      "probes_defect": "D4",
+      "scores": {
+        "decision_alignment": 10,
+        "technical_accuracy": 9,
+        "boundary_respect": 10,
+        "specificity": 7
+      },
+      "reported_only": {
+        "voice_fidelity": null
       },
       "average": 9.0
     }
   ],
+  "dimension_averages": {
+    "decision_alignment": 9.75,
+    "technical_accuracy": 8.5,
+    "boundary_respect": 10.0,
+    "specificity": 7.75
+  },
   "iterations": [
     {
       "pass": 1,
-      "average": 7.8,
-      "accepted": false,
-      "general_identity_adjustment": "Generalised the speed-vs-correctness heuristic and broadened the stack-preference note. No question/answer pair copied into the file."
+      "average": 9.2,
+      "accepted": true,
+      "general_identity_adjustment": "Passed the gating threshold, but the critic still surfaced four technical defects the score did not block on: a secret-debugging rule that forbade raw values then proposed a raw substring; a census-vs-probe rule that did not generalise from code to data; an observability reflex coupled to GPU jobs only; and verification numbers being written into an explicitly ephemeral handoff. Four GENERAL rules were added — no question/answer pair copied into the file.",
+      "lesson": "Reaching the threshold is not the same as being defect-free. A passing average can hide defects that only a targeted pass finds."
     },
     {
       "pass": 2,
-      "average": 8.8,
+      "average": 9.0,
       "accepted": true,
-      "general_identity_adjustment": "No further change needed — the broadened heuristics already cover the held-out questions."
+      "general_identity_adjustment": "All four defects verified FIXED against four scenario-different questions. Two NEW defects introduced by the fixes themselves were caught by the edge re-probe and repaired.",
+      "lesson": "A rule added to fix one defect can contradict a rule already in the file."
     }
   ],
+  "edge_reprobe": {
+    "ran": true,
+    "why": "Mandatory after any identity edit — probe the edge the new rule created, not the case that failed.",
+    "new_defects_introduced": [
+      {
+        "id": "N1",
+        "defect": "The migration rule was written as an absolute with no infeasibility branch, contradicting the census rule two lines above it which explicitly allows sampling when a full diff is unviable. At sufficient scale the proxy could only over-demand or improvise an unauthorised exception.",
+        "probe": "Prove a backfill is correct on a 400M-row production table.",
+        "repaired": true,
+        "repair": "Added an explicit feasibility criterion plus a declared-criterion sampling branch."
+      },
+      {
+        "id": "N2",
+        "defect": "The observability rule was widened to 'anything that runs for minutes' with no duration threshold, colliding with the same identity's anti-scope-inflation rule — a 90-second lint would nominally require progress instrumentation.",
+        "probe": "Should a 90-second repo-wide lint get a progress counter and a log?",
+        "repaired": true,
+        "repair": "Added an explicit trigger: over ~5 minutes, or more than 1 minute with no output."
+      }
+    ],
+    "probes_passed": 3,
+    "probes_run": 3
+  },
   "result": {
-    "average": 8.8,
+    "average": 9.0,
     "threshold": 8.5,
     "accepted": true,
     "specific_case_inserted": false,
+    "defects_fixed": ["D1", "D2", "D3", "D4"],
+    "new_defects_introduced_and_repaired": ["N1", "N2"],
     "general_identity_adjustments": [
-      "Generalised the speed-vs-correctness decision heuristic (section 2).",
-      "Broadened the stack-preference note so it extrapolates rather than memorises (section 6)."
+      "Secret debugging compares non-secret metadata first, then hashes — never any substring of the value, and never in a way that leaks via argv, shell tracing, or CI logs.",
+      "Census-vs-probe generalised from code to data and to sets of surfaces, with an explicit feasibility criterion for when sampling becomes legitimate.",
+      "Live-observability decoupled from GPU/training and given a duration trigger so it does not fire on short jobs.",
+      "Verification evidence routed out of the ephemeral handoff and into the PR or a named verification artifact."
     ]
   }
 }

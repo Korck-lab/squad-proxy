@@ -18,17 +18,21 @@ Run it after `/proxyme-identity` (which produces `~/.claude/skills/proxyme/${LOG
 
 ## Scorecard rubric
 
-The critic scores every answer 0–10 on five dimensions; the answer's score is their mean, and the run's score is the mean across all held-out questions:
+The critic scores every answer 0–10 on five dimensions. **Four of them gate acceptance; `voice_fidelity` is measured and reported but never gates.**
 
-| Dimension | What it measures |
-| --- | --- |
-| `voice_fidelity` | Sounds like the user — tone, language (PT-BR/EN), length |
-| `decision_alignment` | Matches how the user actually decides (speed vs. care, autonomy) |
-| `technical_accuracy` | Picks defaults consistent with the user's real stack |
-| `boundary_respect` | Honours the absolute carve-outs and escalation rules |
-| `specificity` | Concrete and grounded, not generic filler |
+| Dimension | Gates? | What it measures |
+| --- | --- | --- |
+| `decision_alignment` | **yes** | Matches how the user actually decides (speed vs. care, autonomy) |
+| `technical_accuracy` | **yes** | Picks defaults consistent with the user's real stack and documented recipes |
+| `boundary_respect` | **yes** | Honours the carve-outs — neither under- **nor over**-escalating (over-escalating an ordinary technical call is also a failure) |
+| `specificity` | **yes** | Concrete and grounded: named paths, commands, numbers, criteria — not filler |
+| `voice_fidelity` | no — reported only | Sounds like the user — tone, language, length |
 
-**Acceptance threshold: the run must average 8.5/10.** Below that, the loop iterates; the canonical schema and a documented real run live in `fixtures/sample-scorecard.json`.
+**Acceptance threshold: the mean of the four gating dimensions must reach 8.5/10.** Below that, the loop iterates.
+
+Why voice does not gate: a wrong-sounding right answer is a cosmetic defect; a right-sounding wrong answer is the one that costs. Voice is still scored, because a collapse there is a signal worth seeing — it just never blocks a run or triggers an iteration on its own.
+
+**Every scorecard must record `rubric_scored`** — the exact dimension list that produced the average. Scores computed under different critic instructions are **not comparable**: a run where the critic was told to penalise each voice violation per-occurrence will report a lower `voice_fidelity` than one where it was not, and reading that as a regression is a measurement error, not a finding. Without `rubric_scored` written down, nobody can tell the two apart later. The canonical schema and a documented real run live in `fixtures/sample-scorecard.json`.
 
 ## Anti-overfit rule
 
@@ -38,10 +42,20 @@ The critic scores every answer 0–10 on five dimensions; the answer's score is 
 
 1. **Draw held-out questions.** From the collected feedback/session info, generate ~6 analogous questions that probe decisions the identity *implies* but does not state verbatim. Keep them general — no real names, emails, tokens, or absolute personal paths.
 2. **Run the actor.** Spawn a FRESH `proxyme:proxy` per held-out question (candidate identity + the question); collect each one-shot answer.
-3. **Run the critic.** Spawn one Opus agent, hand it the rubric and the actor answers, and have it return a scorecard (per-dimension scores + per-question and overall averages) in the `fixtures/sample-scorecard.json` shape.
-4. **Decide (conditional 1).** If the overall average is **≥ 8.5/10**, accept: report the scorecard and stop.
-5. **Iterate (conditional 2).** Else, if retries remain (cap below), apply the critic's *general* adjustments to `${LOGNAME}-identity.md`, re-draw fresh held-out questions, and loop to step 2.
-6. **Give up gracefully (conditional 3).** If the **retry cap** is reached without passing, stop, report the best scorecard and the remaining gaps, and recommend the real user review the identity manually — do not keep tuning.
+3. **Run the critic.** Spawn one Opus agent, hand it the rubric and the actor answers, and have it return a scorecard (per-dimension scores + per-question and overall averages, plus `rubric_scored`) in the `fixtures/sample-scorecard.json` shape.
+4. **Decide (conditional 1).** If the gating average is **≥ 8.5/10**, accept: report the scorecard and stop.
+5. **Iterate (conditional 2).** Else, if retries remain (cap below), apply the critic's *general* adjustments to `${LOGNAME}-identity.md`, then run the **edge re-probe** in step 6 before re-drawing and looping to step 2.
+6. **Edge re-probe (mandatory after any edit).** A rule added to fix one defect can contradict a rule already in the file. After applying adjustments, draw **1–2 extra questions aimed at the edge the new rule created** — not at the case that failed — and have the critic report `new_defects_introduced`. Fix those before continuing; an adjustment that introduces a contradiction is not an improvement.
+7. **Give up gracefully (conditional 3).** If the **retry cap** is reached without passing, stop, report the best scorecard and the remaining gaps, and recommend the real user review the identity manually — do not keep tuning.
+
+### Why step 6 exists
+
+Observed in a real run: the critic's four proposed adjustments were applied and all four original defects verified fixed — but two of the *fixes themselves* introduced new contradictions.
+
+- A migration rule was written as an absolute ("always diff every field") with no infeasibility branch, contradicting a census rule two lines above that explicitly allowed sampling when a full diff is unviable. At sufficient scale the proxy could only over-demand or improvise an unauthorised exception.
+- An observability rule was widened to "anything that runs for minutes" with no duration threshold, colliding with the same identity's anti-scope-inflation rule — a 90-second lint would nominally require progress instrumentation.
+
+Neither was visible from the questions that motivated the fix; both surfaced only when new questions probed the boundary the new wording created. **Re-probe the edge the rule created, not the case that failed.** Instruct the critic explicitly to hunt for defects its own proposed edits introduced — it will not do this unprompted.
 
 **Retry cap: 3 iterations** (mirrors the dev-squad actor/critic `maxRetries=3`). The loop always terminates: accept on pass, or stop and escalate after 3 tries.
 
@@ -58,7 +72,9 @@ The critic scores every answer 0–10 on five dimensions; the answer's score is 
 
 ## Real-run evidence (skill-validation-before-merge)
 
-This skill was run end-to-end once. **Observed result:** iteration 1 scored 7.8/10 (below threshold), the critic broadened two *general* heuristics in the identity file (no question/answer pair copied in), iteration 2 scored 8.8/10 on freshly-drawn held-out questions and was accepted. That run is captured in `fixtures/sample-scorecard.json` and asserted by `proxyme-validate.test.sh` (per-dimension scores, the 8.5/10 average threshold, accept/iterate logic, and the anti-overfit `specific_case_inserted: false` flag).
+This skill has been run end-to-end multiple times. **Observed result (2026-07-27):** pass 1 **cleared** the gating threshold at 9.2/10 and *still* carried four technical defects the score did not block on — a secret-debugging rule that forbade raw values and then proposed a raw substring; a census-vs-probe rule that never generalised from code to data; an observability reflex coupled to GPU jobs only; and verification numbers written into an explicitly ephemeral handoff. Four *general* rules were added (no question/answer pair copied in). Pass 2 verified all four **FIXED** at 9.0/10 on four scenario-different questions — and the mandatory edge re-probe then caught **two new defects introduced by those very fixes**: an absolute with no infeasibility branch that contradicted a neighbouring rule, and a widened rule with no duration threshold that collided with the identity's own anti-scope-inflation rule. Both were repaired; 3/3 re-probes passed.
+
+**Two lessons that generalise:** clearing the threshold is not the same as being defect-free, and an adjustment that introduces a contradiction is not an improvement. That run is captured in `fixtures/sample-scorecard.json` and asserted by `proxyme-validate.test.sh` (gating-only averages, `rubric_scored` provenance, the 8.5/10 threshold, accept/iterate logic, the edge re-probe with every self-inflicted defect repaired, and the anti-overfit `specific_case_inserted: false` flag).
 
 Run the evidence check:
 

@@ -17,9 +17,9 @@ proxyme is a Claude Code plugin. While consultation mode is ON, any question Cla
 ## How it works
 
 ```
-/proxyme-identity  →  ~/.claude/skills/proxyme/${LOGNAME}-identity.md
+/proxyme-identity  →  <project>/.claude/proxyme/${LOGNAME}-identity.md
                                     ↓
-/proxyme           →  consultation mode ON (session + cwd scoped flag; no agent spawned yet)
+/proxyme           →  consultation mode ON (session + project scoped flag; no agent spawned yet)
                                     ↓
    a question Claude would ask you
                                     ↓
@@ -30,9 +30,34 @@ proxyme is a Claude Code plugin. While consultation mode is ON, any question Cla
 
 1. **Identity extraction** — `/proxyme-identity` analyzes your Claude Code session history and memories (JSONL files in `~/.claude/projects/`) to synthesize your decision-making patterns, preferred stack, communication style, and active projects.
 
-2. **Turn consultation mode on** — `/proxyme` writes a session- and cwd-scoped flag. No agent is spawned at activation: there is nothing to do until a question actually arrives. While the flag is present, any question Claude would route to the real user goes to a proxy instead.
+2. **Turn consultation mode on** — `/proxyme` writes a session- and project-scoped flag. No agent is spawned at activation: there is nothing to do until a question actually arrives. While the flag is present, any question Claude would route to the real user goes to a proxy instead.
 
 3. **Delegation** — When Claude hits a question it would otherwise ask you, it spawns a fresh exclusive proxy with your identity briefing. The proxy answers that one question as if it were you — with your values and judgment — and then dies. Each question spawns a new, separate instance; nothing persists between questions.
+
+## Project-scoped state
+
+Since v0.5.0 everything proxyme persists lives under the project, not your home directory:
+
+```
+<project>/.claude/proxyme/
+├── ${LOGNAME}-identity.md    project-owned identity
+├── config.json               model + effort for this project
+└── carve-outs.md             carve-outs registered with --except
+```
+
+The plugin itself stays installed user-wide — `/proxyme` is available in every repo. Only what it *remembers* is per-project.
+
+**Seeded once, then diverges.** The first `/proxyme` in a project copies your global `~/.claude/skills/proxyme/` files in and then leaves them alone. After that the global copy is a **template**: editing it does not reach a project that has already been seeded, and `/proxyme-identity` / `/proxyme-validate` operate on the project copy. Validate scores are therefore per-project.
+
+**Carve-outs are additive.** `--except` writes to the project file. The machine-wide section under `## Proxy delegation` in `~/.claude/CLAUDE.md` is still read and passed to every proxy, so a standing authorization keeps working in a freshly-seeded repo without being re-granted. proxyme no longer writes `~/.claude/CLAUDE.md`.
+
+**Your identity never becomes committable.** On seeding, `.claude/proxyme/` is added to the repo's `.git/info/exclude` unless it is already ignored. That file is repo-local and untracked, so nothing shows up in a diff and no tracked file is touched.
+
+**Project root** is the nearest ancestor containing a `.claude/` directory — stopping before `$HOME` — then the git toplevel, then the working directory. The session flag is keyed on that root, so consultation mode survives `cd` into a subdirectory.
+
+### Upgrading from 0.4.x
+
+Nothing to do. The first `/proxyme` in each repo seeds it from your existing global files. Carve-outs you registered before 0.5.0 still live in `~/.claude/CLAUDE.md`, which is still read.
 
 ## Prerequisites
 
@@ -89,7 +114,9 @@ Analyzes your Claude Code memories and sessions (JSONL files in `~/.claude/proje
 /proxyme-identity
 ```
 
-**Output:** `~/.claude/skills/proxyme/${LOGNAME}-identity.md`
+**Output:** `<project>/.claude/proxyme/${LOGNAME}-identity.md`
+
+The *scan* is machine-wide — it reads all of `~/.claude/projects/`, because a profile built from one repo's history is a thin profile. Only the output is project-scoped.
 
 Run once to bootstrap. Refresh periodically when your preferences, tech stack, or active projects change significantly.
 
@@ -106,10 +133,10 @@ Turns consultation mode on or off for this session.
 
 If no identity file exists yet, `/proxyme` runs `/proxyme-identity` automatically before activating.
 
-The session flag is keyed by both the worktree and the session id — one flag per session. If the flag is already present, `/proxyme` simply reports that mode is already on and stops (still applying `--except` or an instruction if you passed one). `/proxyme --off` removes the flag; there is no agent to shut down, so questions just go back to the real user.
+The session flag is keyed by both the project root and the session id — one flag per session. If the flag is already present, `/proxyme` simply reports that mode is already on and stops (still applying `--except` or an instruction if you passed one). `/proxyme --off` removes the flag; there is no agent to shut down, so questions just go back to the real user.
 
 **Flags:**
-- `--except "<text>"`: Register a session carve-out (persisted to `~/.claude/CLAUDE.md` across sessions)
+- `--except "<text>"`: Register a carve-out (persisted to `<project>/.claude/proxyme/carve-outs.md` across sessions)
 - `[instruction]`: Optional free-form text. Turns mode on **and** immediately runs one one-shot consultation using the instruction as the question — a fresh proxy answers it and terminates. One-time; not persisted
 
 ### /proxyme:model [set | reset]
@@ -122,14 +149,14 @@ Configure which model and effort level the proxy uses.
 /proxyme:model reset    # Restore defaults
 ```
 
-Default: best available model, maximum effort. Saved to `~/.claude/skills/proxyme/config.json`.
+Default: best available model, maximum effort. Saved per project to `<project>/.claude/proxyme/config.json`, seeded on first use from `~/.claude/skills/proxyme/config.json` if you have one.
 
 ## Privacy
 
 Your identity file (`${LOGNAME}-identity.md`) is generated locally from your Claude Code session history. It is:
 
-- **Stored only on your machine** in `~/.claude/skills/proxyme/`
-- **Never committed to this repository** (gitignored by default)
+- **Stored only on your machine** in `<project>/.claude/proxyme/` (and `~/.claude/skills/proxyme/` as the seed template)
+- **Never committable** — seeding adds `.claude/proxyme/` to the repo's `.git/info/exclude` unless it is already ignored
 - **Only sent to Claude API** when a proxy is spawned to answer a question
 - **Never shared or logged** by the plugin
 
@@ -165,7 +192,7 @@ Add exceptions to your proxy's authority with:
 /proxyme --except "exception description"
 ```
 
-These are persisted in `~/.claude/CLAUDE.md` and will be honored by your proxy in future sessions.
+These are persisted in `<project>/.claude/proxyme/carve-outs.md` and will be honored by your proxy in future sessions **in that project**. Machine-wide rules under `## Proxy delegation` in `~/.claude/CLAUDE.md` are still read and apply everywhere.
 
 ## How the proxy reads your identity
 

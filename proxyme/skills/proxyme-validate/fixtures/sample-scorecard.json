@@ -3,7 +3,7 @@
   "skill": "proxyme-validate",
   "run": {
     "date": "2026-07-27",
-    "identity_under_test": "$HOME/.claude/skills/proxyme/${LOGNAME}-identity.md",
+    "identity_under_test": "$PROXYME_ROOT/.claude/proxyme/${LOGNAME}-identity.md",
     "actor": "proxyme:proxy",
     "critic": "opus",
     "retry_cap": 3,

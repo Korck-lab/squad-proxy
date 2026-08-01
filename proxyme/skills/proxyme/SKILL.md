@@ -24,20 +24,30 @@ The proxy is **ephemeral and purely reactive**. There is no persistent agent, no
 
 ## State model
 
-Consultation mode is recorded by a **single session+cwd-scoped flag file**:
+proxyme state is **project-scoped**. Identity, model config and carve-outs live under the project root, not in your home directory:
 
 ```
-/tmp/proxyme-<hash(cwd)>-<session_id>.active
+<root>/.claude/proxyme/
+├── <user>-identity.md    project-owned identity (seeded once from the global file)
+├── config.json           {"model": ..., "effort": ...}
+└── carve-outs.md         carve-outs registered with --except
 ```
 
-It is keyed by **both** the worktree hash **and** `CLAUDE_CODE_SESSION_ID`, so two sessions in the same directory each get their own independent flag (one flag per session, not per worktree). The flag means exactly one thing: **consultation mode is ON**. It is **not** a liveness marker for any agent — no agent persists between questions.
+Consultation mode itself is a **single session+root-scoped flag file**, `/tmp/proxyme-<hash(root)>-<session_id>.active`, keyed by **both** the project root hash **and** `CLAUDE_CODE_SESSION_ID`. Two sessions in the same project each get their own independent flag. The flag means exactly one thing: **consultation mode is ON**. It is **not** a liveness marker — no agent persists between questions.
 
-Whenever you need this path, compute it inline. The session id comes from `CLAUDE_CODE_SESSION_ID` (set by Claude Code); fall back to a per-terminal hash if absent:
+### Resolving paths — do this FIRST, every invocation
+
+Never derive these paths by hand. `lib/proxyme-paths.sh` is the single definition; run it and `eval` its output at the start of every bash step below.
+
+`PLUGIN_ROOT` is the directory **two levels above this skill's base directory** — the base directory is stated in this skill's launch header (`.../proxyme/<version>/skills/proxyme` → `PLUGIN_ROOT=.../proxyme/<version>`). Do **not** rely on `$CLAUDE_PLUGIN_ROOT`; it is not set in Bash tool calls.
 
 ```bash
-SID="${CLAUDE_CODE_SESSION_ID:-$(tty 2>/dev/null | shasum | cut -c1-12)}"; SID="${SID:-nosession}"
-F="/tmp/proxyme-$(echo -n "$PWD" | shasum | cut -c1-12)-${SID}.active"
+eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"
 ```
+
+That defines `PROXYME_ROOT`, `PROXYME_DIR`, `PROXYME_IDENTITY`, `PROXYME_CONFIG`, `PROXYME_CARVEOUTS`, `PROXYME_GLOBAL_IDENTITY`, `PROXYME_GLOBAL_CONFIG`, `PROXYME_USER`, `PROXYME_SID`, `PROXYME_FLAG`. Every later snippet assumes they are in scope; chain the `eval` into the same bash call.
+
+Root resolution is: nearest ancestor with a `.claude/` directory, **stopping before `$HOME`**, then the git toplevel, then `$PWD`.
 
 ## What to do when invoked
 
@@ -52,7 +62,7 @@ From the full input string extract:
 ### 2. If `--off`
 
 ```bash
-SID="${CLAUDE_CODE_SESSION_ID:-$(tty 2>/dev/null | shasum | cut -c1-12)}"; SID="${SID:-nosession}"; F="/tmp/proxyme-$(echo -n "$PWD" | shasum | cut -c1-12)-${SID}.active"; test -f "$F" && rm -f "$F" && echo "DEACTIVATED" || echo "INACTIVE"
+eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"; test -f "$PROXYME_FLAG" && rm -f "$PROXYME_FLAG" && echo "DEACTIVATED" || echo "INACTIVE"
 ```
 
 - `DEACTIVATED`: the flag was present and is now removed → `"Proxy deactivated."`
@@ -63,7 +73,7 @@ SID="${CLAUDE_CODE_SESSION_ID:-$(tty 2>/dev/null | shasum | cut -c1-12)}"; SID="
 ### 3. Already-active check
 
 ```bash
-SID="${CLAUDE_CODE_SESSION_ID:-$(tty 2>/dev/null | shasum | cut -c1-12)}"; SID="${SID:-nosession}"; F="/tmp/proxyme-$(echo -n "$PWD" | shasum | cut -c1-12)-${SID}.active"; test -f "$F" && echo "FLAG_PRESENT" || echo "NO_FLAG"
+eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"; test -f "$PROXYME_FLAG" && echo "FLAG_PRESENT" || echo "NO_FLAG"
 ```
 
 - **NO_FLAG:** mode is OFF → continue to step 4 to activate.
@@ -71,28 +81,58 @@ SID="${CLAUDE_CODE_SESSION_ID:-$(tty 2>/dev/null | shasum | cut -c1-12)}"; SID="
   - If **neither** `--except` **nor** an instruction was given: `"Proxy already active in this session. Use /proxyme --off to deactivate."` — **STOP HERE.**
   - If `--except` or an instruction **was** given: do **not** rewrite the flag; just apply them — persist the carve-out (step 5) and/or run the one-shot consultation (step 7) — then confirm.
 
-### 4. Check for ${LOGNAME}-identity.md
+### 4. Resolve project state — seed it if this project has none
 
-**IMPORTANT:** This file is stored globally at `~/.claude/skills/proxyme/` and persists across ALL projects and sessions. ALWAYS run the bash check below — never assume the file is missing just because you are in a new project or new session.
+Project state is created on first use by **copying** the global identity, after which the project owns it. ALWAYS run the bash below — never assume the project file is missing just because you are in a new project or new session.
 
 ```bash
-test -f ~/.claude/skills/proxyme/${LOGNAME}-identity.md && echo "EXISTS" || echo "MISSING"
+eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"
+mkdir -p "$PROXYME_DIR"
+if [ -f "$PROXYME_IDENTITY" ]; then
+  echo "PROJECT"
+elif [ -f "$PROXYME_GLOBAL_IDENTITY" ]; then
+  cp "$PROXYME_GLOBAL_IDENTITY" "$PROXYME_IDENTITY"
+  [ -f "$PROXYME_GLOBAL_CONFIG" ] && [ ! -f "$PROXYME_CONFIG" ] && cp "$PROXYME_GLOBAL_CONFIG" "$PROXYME_CONFIG"
+  [ -f "$PROXYME_CARVEOUTS" ] || printf '# Project carve-outs\n\n- _(none yet)_\n' > "$PROXYME_CARVEOUTS"
+  echo "SEEDED"
+else
+  echo "MISSING"
+fi
 ```
 
-- **EXISTS:** continue.
+- **PROJECT:** continue silently.
+- **SEEDED:** run the ignore guard below, then tell the user once:
+  `"Seeded .claude/proxyme/ from your global identity. It is project-owned now — global edits no longer reach this repo."`
 - **MISSING:**
-  - Warn the user: `"Identity file not found — running /proxyme-identity first to bootstrap your identity. This may take a minute..."`
-  - Invoke the `proxyme-identity` skill inline (Skill tool with `skill: "proxyme:proxyme-identity"`), wait for it to finish, then continue.
+  - Warn: `"Identity file not found — running /proxyme-identity first to bootstrap your identity. This may take a minute..."`
+  - Invoke the `proxyme-identity` skill inline (Skill tool with `skill: "proxyme:proxyme-identity"`), wait for it to finish, then continue. It writes to `$PROXYME_IDENTITY`.
+
+**Ignore guard (SEEDED only).** The identity file is a personal profile; it must never be committable. This writes to `.git/info/exclude`, which is repo-local and never itself tracked — no tracked file is modified and nothing appears in a diff:
+
+```bash
+if git -C "$PROXYME_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  if ! git -C "$PROXYME_ROOT" check-ignore -q .claude/proxyme/; then
+    EX="$(git -C "$PROXYME_ROOT" rev-parse --git-path info/exclude)"
+    mkdir -p "$(dirname "$EX")"
+    grep -qxF '.claude/proxyme/' "$EX" 2>/dev/null || printf '\n# proxyme: project-scoped personal identity — never commit\n.claude/proxyme/\n' >> "$EX"
+    echo "EXCLUDED"
+  else
+    echo "ALREADY_IGNORED"
+  fi
+else
+  echo "NOT_A_GIT_REPO"
+fi
+```
+
+On `EXCLUDED`, add to the same confirmation: `"Added .claude/proxyme/ to .git/info/exclude — your identity stays out of commits."`
 
 ### 5. Register exception (if `--except` was given)
 
-Persist the carve-out to `~/.claude/CLAUDE.md`:
+Persist the carve-out to `$PROXYME_CARVEOUTS` — **never** to `~/.claude/CLAUDE.md`, which proxyme only reads.
 
-a. Read `~/.claude/CLAUDE.md`. If it has no `## Proxy delegation` heading, append this section (creating the file if needed):
+a. Read `$PROXYME_CARVEOUTS`. If it does not exist, create it with:
 ```
-## Proxy delegation
-
-Session carve-outs — the proxy must escalate these to the real user, never decide them alone:
+# Project carve-outs
 
 - _(none yet)_
 ```
@@ -103,7 +143,7 @@ b. Add the carve-out: if the list shows `_(none yet)_`, replace that line with `
 Only if the flag was **NO_FLAG** in step 3. Write the timestamped flag. Do **not** spawn any agent here — activation is reactive, nothing happens until a question arrives.
 
 ```bash
-SID="${CLAUDE_CODE_SESSION_ID:-$(tty 2>/dev/null | shasum | cut -c1-12)}"; SID="${SID:-nosession}"; echo "{\"started\":$(date +%s),\"session_id\":\"$SID\",\"cwd\":\"$PWD\"}" > "/tmp/proxyme-$(echo -n "$PWD" | shasum | cut -c1-12)-${SID}.active"
+eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"; printf '{"started":%s,"session_id":"%s","root":"%s"}\n' "$(date +%s)" "$PROXYME_SID" "$PROXYME_ROOT" > "$PROXYME_FLAG"
 ```
 
 ### 7. If a positional instruction was given
@@ -125,13 +165,17 @@ This is the protocol the main agent follows for **each** question while mode is 
 
 For each question:
 
-1. **Read model config:**
+1. **Read model config (project):**
    ```bash
-   cat ~/.claude/skills/proxyme/config.json 2>/dev/null || echo '{"model":"opus","effort":"xhigh"}'
+   eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"; cat "$PROXYME_CONFIG" 2>/dev/null || echo '{"model":"opus","effort":"xhigh"}'
    ```
    Parse `model` and `effort` (fallback: `model=opus`, `effort=xhigh`).
-2. **Read the identity file:** full content of `~/.claude/skills/proxyme/${LOGNAME}-identity.md`.
-3. **Read carve-outs + build session context:** the carve-outs under `## Proxy delegation` in `~/.claude/CLAUDE.md` (or "none yet"); current project, working directory, and `git status` (if applicable).
+2. **Read the identity file:** full content of `$PROXYME_IDENTITY`.
+3. **Read carve-outs from BOTH sources + build session context.** The two sources are additive and are passed to the proxy **labelled**, so it can tell machine-wide standing authorization from repo-specific limits:
+   - machine-wide: the section under `## Proxy delegation` in `~/.claude/CLAUDE.md` (or "none yet"). proxyme reads this file; it no longer writes it.
+   - this project: `$PROXYME_CARVEOUTS` (or "none yet").
+
+   Also gather: project name, `$PROXYME_ROOT`, and `git status` (if applicable).
 4. **Spawn a FRESH agent with the Agent tool:**
    - `name`: unique per question (e.g. `proxy-<short-hash-of-question>`), so concurrent consultations never collide.
    - `subagent_type`: `"proxyme:proxy"` — the **read-only** agent shipped with this plugin; it physically cannot edit files, run commands, or spawn agents. If that type does not resolve, fall back to `"general-purpose"` — the read-only rules in the briefing still bind it.
@@ -161,7 +205,7 @@ For each question:
 >
 > ## Reference identity
 >
-> [FULL CONTENT OF ~/.claude/skills/proxyme/${LOGNAME}-identity.md]
+> [FULL CONTENT OF $PROXYME_IDENTITY]
 >
 > ---
 >
@@ -176,13 +220,20 @@ For each question:
 >
 > ## Session carve-outs — also escalate these to the real user, never decide them alone
 >
-> [LIST OF EXCEPTIONS FROM CLAUDE.md — bullet list, or "none yet"]
+> [ machine-wide, from ~/.claude/CLAUDE.md ## Proxy delegation ]
+>
+> [BULLET LIST FROM ~/.claude/CLAUDE.md, or "none yet"]
+>
+> [ this project, from <root>/.claude/proxyme/carve-outs.md ]
+>
+> [BULLET LIST FROM $PROXYME_CARVEOUTS, or "none yet"]
 >
 > ---
 >
 > ## Current session context
 >
 > Project: [PROJECT NAME]
+> Project root: [PROXYME_ROOT]
 > Directory: [WORKING DIRECTORY]
 > Git status: [GIT STATUS OR "not a git repository"]
 >
@@ -197,28 +248,29 @@ For each question:
 ## Notes
 
 - **Read-only, one-shot, reactive.** The proxy is spawned via the `proxyme:proxy` subagent type (Read/Grep/Glob/LS only) — it informs an answer and returns text; the main agent executes everything. Each question spawns a fresh instance that answers once and terminates. There is no persistent agent, no message bus, no liveness ping, no shutdown handshake, and no proactive advice.
-- **One flag per session.** State is `/tmp/proxyme-<hash(cwd)>-<session_id>.active`, keyed by worktree **and** `CLAUDE_CODE_SESSION_ID`. The flag means only that consultation mode is ON — it is never a liveness marker. Two sessions in the same directory each have their own flag and never interfere.
+- **One flag per session.** State is `/tmp/proxyme-<hash(root)>-<session_id>.active`, keyed by **project root** and `CLAUDE_CODE_SESSION_ID`. Keying on the root, not `$PWD`, is what lets consultation mode survive a `cd` into a subdirectory. The flag means only that consultation mode is ON — it is never a liveness marker. Two sessions in the same project each have their own flag and never interfere.
 - **Stale flag cleanup.** Orphaned flags from crashed sessions accumulate in `/tmp` and are cleaned on the next `/proxyme --off` in that session, or by the OS on reboot. No daemon, no TTL, no background pruner.
 - **While active, never ask the user directly** — route the question to a fresh one-shot proxy (except absolute carve-outs and registered session carve-outs, which the proxy escalates back to the real user).
-- **Carve-outs persist.** Carve-outs registered with `--except` persist in `~/.claude/CLAUDE.md` under `## Proxy delegation` (the section is created if missing).
+- **State is project-scoped.** Identity, model config and carve-outs live in `<root>/.claude/proxyme/`. The global `~/.claude/skills/proxyme/` files are a **template**: they seed a project once, and after that editing them has no effect on that project. `/proxyme-identity` and `/proxyme-validate` operate on the project copy, so validate scores are per-project.
+- **Carve-outs are additive.** `--except` writes to `<root>/.claude/proxyme/carve-outs.md`. The machine-wide section under `## Proxy delegation` in `~/.claude/CLAUDE.md` is still **read** and passed to every proxy, so a standing authorization keeps working in a freshly-seeded repo without being re-granted. proxyme no longer writes `~/.claude/CLAUDE.md`.
+- **The identity never becomes committable.** On seeding, `.claude/proxyme/` is added to `.git/info/exclude` unless already ignored — repo-local, untracked, invisible in diffs.
 - **Positional instruction is one-time.** It is answered immediately as a single one-shot consultation; it is not persisted.
-- **Bootstrap.** If `/proxyme-identity` has never been run, step 4 bootstraps it automatically.
+- **Bootstrap.** If no identity exists anywhere, step 4 runs `/proxyme-identity` automatically.
 
 ---
 
 ## Test plan — real-run evidence (skill-validation-before-merge)
 
-This skill was exercised end-to-end in a real Claude Code context (not simulated, not a spec read) after the redesign to the read-only one-shot model. Recorded so the guardrail's real-run evidence lives inline with the skill.
+This skill was exercised end-to-end in a real Claude Code context (not simulated, not a spec read) after the move to project-scoped state. Recorded so the guardrail's real-run evidence lives inline with the skill.
 
 **What was run (real environment):**
 
-1. Activation preconditions — the deterministic bash of steps 2/3/6 against the live machine:
-   - flag-path computation → resolved a session-scoped path under `/tmp/proxyme-<hash(cwd)>-<session_id>.active`, `NO_FLAG` (no prior mode) → activation proceeds; no agent spawned at activation.
-   - identity check `test -f ~/.claude/skills/proxyme/${LOGNAME}-identity.md` → `EXISTS` (step 4 skips the bootstrap; the consultation briefing has a real technical profile to extrapolate from).
-   - model config read → `{"model":"opus","effort":"xhigh"}` (interpolated into the briefing's Reasoning line).
-2. Model-conformance verification — the new contract is live across both files:
-   - `grep -c one-shot proxyme/agents/proxy.md` → `>= 1`
-   - `grep -c "read-only" proxyme/agents/proxy.md` → `>= 1`
-   - `grep -c "extrapolate from the technical profile" proxyme/agents/proxy.md` → `1`
+1. Path resolution — `lib/proxyme-paths.sh` against the live machine, three arms:
+   - repo root → `PROXYME_ROOT` = the repo, `PROXYME_FLAG` = `/tmp/proxyme-<12-hex>-<session_id>.active`.
+   - **control arm**, temp dir with no `.claude/` and no git → `PROXYME_ROOT` = the temp dir, **not** `$HOME`. Without the `[ "$d" != "$HOME" ]` guard this arm resolves to `$HOME` and every such repo silently shares one state directory; the control arm is what proves the class, not just the path.
+   - subdirectory of a repo → same `PROXYME_ROOT` and identical `PROXYME_FLAG` as the repo root. This is the regression that root-keying fixes: `$PWD`-keying returned a different flag path from a subdirectory, so consultation mode read as OFF.
+2. `CLAUDE_PLUGIN_ROOT` is **unset** in Bash tool calls (`echo "[${CLAUDE_PLUGIN_ROOT:-UNSET}]"` → `[UNSET]`). Plugin root is therefore derived from the skill's announced base directory, not from the environment variable.
+3. Seed path against a second real project (`games/portals`): `SEEDED` → `.claude/proxyme/{<user>-identity.md,config.json,carve-outs.md}` created, identity byte-identical to the global file, and the global file's checksum unchanged afterwards — proving the global copy is a template, not shared state.
+4. Ignore guard: `git check-ignore -q .claude/proxyme/` on a repo whose `.gitignore` does not cover `.claude/` → `EXCLUDED`, entry appended to `.git/info/exclude`, `git status` clean.
 
-**Observed result:** the activation path runs green against the real environment; the one-shot and interpretation anchors are present in both files. A spawned proxy is read-only and ephemeral, briefed to extrapolate from its profile for questions it has no memorized answer to, then terminate — instead of guessing, deferring, or staying reachable. No PII is captured here — only section structure and config, never identity contents.
+**Observed result:** activation, seeding and consultation run green against the real environment; state lands under the project root and the global files are never mutated. No PII is captured here — only path structure and config, never identity contents.

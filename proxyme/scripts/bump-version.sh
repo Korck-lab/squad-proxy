@@ -1,5 +1,12 @@
 #!/bin/bash
-# Bump the patch version in VERSION, plugin.json and marketplace.json — atomically.
+# Bump the version in VERSION, plugin.json and marketplace.json — atomically.
+#
+# Bump level:
+#   PROXYME_BUMP=patch (default) | minor | major
+#   Exported for the one commit that needs it, e.g.
+#     PROXYME_BUMP=minor git commit -m "feat!: ..."
+#   The level is validated in phase 1, before anything is written, so an invalid
+#   value fails the commit instead of producing a wrong version.
 #
 # Skip rule (amend/no-op guard):
 #   The bump only runs when there is a STAGED DELTA vs HEAD inside proxyme/
@@ -50,9 +57,21 @@ if ! printf '%s' "$current" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
   exit 1
 fi
 
+bump_level="${PROXYME_BUMP:-patch}"
+case "$bump_level" in
+  patch|minor|major) ;;
+  *)
+    echo "ERROR: PROXYME_BUMP must be patch, minor or major (got '${bump_level}')" >&2
+    exit 1
+    ;;
+esac
+
 IFS='.' read -r major minor patch <<< "$current"
-new_patch=$((patch + 1))
-new_version="${major}.${minor}.${new_patch}"
+case "$bump_level" in
+  patch) new_version="${major}.${minor}.$((patch + 1))" ;;
+  minor) new_version="${major}.$((minor + 1)).0" ;;
+  major) new_version="$((major + 1)).0.0" ;;
+esac
 
 # --- Phase 2: backup originals + arm rollback ---
 backup_dir="$(mktemp -d)"
@@ -145,4 +164,4 @@ if [ -x "$SYNC_SCRIPT" ]; then
   "$SYNC_SCRIPT" "$new_version" "$REPO_ROOT"
 fi
 
-echo "Bumped version: ${current} -> ${new_version}"
+echo "Bumped version (${bump_level}): ${current} -> ${new_version}"

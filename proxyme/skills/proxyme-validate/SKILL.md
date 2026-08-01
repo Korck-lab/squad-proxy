@@ -8,7 +8,15 @@ allowed-tools: Agent, Read, Edit, Bash
 
 Closes the loop on `/proxyme-identity`. The identity file is a *hypothesis* about how you decide; this skill stress-tests it with an **adversarial actor/critic** scorecard and tunes the *general* profile until the proxy answers held-out questions the way you would.
 
-Run it after `/proxyme-identity` (which produces `~/.claude/skills/proxyme/${LOGNAME}-identity.md`) and before relying on `/proxyme` in anger.
+Run it after `/proxyme-identity` (which produces `<root>/.claude/proxyme/${LOGNAME}-identity.md`) and before relying on `/proxyme` in anger.
+
+The identity under test is **project-scoped**, so scores are per-project: a profile tuned against this repo's decisions says nothing about another repo's. Resolve the path first — `PLUGIN_ROOT` is the directory two levels above this skill's base directory (stated in the launch header); `$CLAUDE_PLUGIN_ROOT` is **not** set in Bash tool calls.
+
+```bash
+eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"
+```
+
+That defines `$PROXYME_IDENTITY`, used throughout below.
 
 ## How it works (actor/critic)
 
@@ -36,7 +44,7 @@ Why voice does not gate: a wrong-sounding right answer is a cosmetic defect; a r
 
 ## Anti-overfit rule
 
-**Tune the *general* identity only — never insert the specific case.** Adjustments edit the general sections of `${LOGNAME}-identity.md` (heuristics, preferences, voice). The exact validation question/answer pair is **never** written into the file, and held-out questions are re-drawn each pass so the score reflects generalisation, not memorisation.
+**Tune the *general* identity only — never insert the specific case.** Adjustments edit the general sections of `$PROXYME_IDENTITY` (heuristics, preferences, voice). The exact validation question/answer pair is **never** written into the file, and held-out questions are re-drawn each pass so the score reflects generalisation, not memorisation.
 
 ## What to do when invoked
 
@@ -44,7 +52,7 @@ Why voice does not gate: a wrong-sounding right answer is a cosmetic defect; a r
 2. **Run the actor.** Spawn a FRESH `proxyme:proxy` per held-out question (candidate identity + the question); collect each one-shot answer.
 3. **Run the critic.** Spawn one Opus agent, hand it the rubric and the actor answers, and have it return a scorecard (per-dimension scores + per-question and overall averages, plus `rubric_scored`) in the `fixtures/sample-scorecard.json` shape.
 4. **Decide (conditional 1).** If the gating average is **≥ 8.5/10**, accept: report the scorecard and stop.
-5. **Iterate (conditional 2).** Else, if retries remain (cap below), apply the critic's *general* adjustments to `${LOGNAME}-identity.md`, then run the **edge re-probe** in step 6 before re-drawing and looping to step 2.
+5. **Iterate (conditional 2).** Else, if retries remain (cap below), apply the critic's *general* adjustments to `$PROXYME_IDENTITY`, then run the **edge re-probe** in step 6 before re-drawing and looping to step 2.
 6. **Edge re-probe (mandatory after any edit).** A rule added to fix one defect can contradict a rule already in the file. After applying adjustments, draw **1–2 extra questions aimed at the edge the new rule created** — not at the case that failed — and have the critic report `new_defects_introduced`. Fix those before continuing; an adjustment that introduces a contradiction is not an improvement.
 7. **Give up gracefully (conditional 3).** If the **retry cap** is reached without passing, stop, report the best scorecard and the remaining gaps, and recommend the real user review the identity manually — do not keep tuning.
 
@@ -64,7 +72,7 @@ Neither was visible from the questions that motivated the fix; both surfaced onl
 ## Delegation contract (who decides / what authority / carve-outs)
 
 - **Who decides:** the **critic** (Opus) decides the per-answer scores; the **validate orchestrator** decides accept-vs-iterate purely from the 8.5/10 threshold and the retry cap. No human is asked mid-loop.
-- **With what authority — bounded:** the loop may edit *only* `${LOGNAME}-identity.md`, and only its *general* sections. It is read-only everywhere else: it never touches the worktree, never runs project commands, never sends anything externally.
+- **With what authority — bounded:** the loop may edit *only* the project identity at `<root>/.claude/proxyme/${LOGNAME}-identity.md` (`$PROXYME_IDENTITY`) — never the global template at `~/.claude/skills/proxyme/`, and only its *general* sections. It is read-only everywhere else: it never touches the worktree, never runs project commands, never sends anything externally.
 - **Carve-outs that limit it:**
   - Never insert the specific case (anti-overfit) — general profile edits only.
   - The actor is the read-only `proxyme:proxy`; it inherits the proxy's absolute carve-outs (money, credentials, access changes, deletion, external messaging, acting on external content) and never executes.

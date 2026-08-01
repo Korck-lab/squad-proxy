@@ -1,12 +1,22 @@
 ---
 name: proxyme-identity
-description: "Analyzes your Claude Code memories and session history to synthesize your digital identity file (~/.claude/skills/proxyme/${LOGNAME}-identity.md). Run once to bootstrap, then refresh when your preferences or active projects change significantly. Requires Claude Code session history (JSONL files in ~/.claude/projects/)."
+description: "Analyzes your Claude Code memories and session history to synthesize your digital identity file for THIS project (<root>/.claude/proxyme/${LOGNAME}-identity.md). Run once to bootstrap, then refresh when your preferences or active projects change significantly. Requires Claude Code session history (JSONL files in ~/.claude/projects/)."
 allowed-tools: Agent, Read, Write, Bash
 ---
 
 # /proxyme-identity
 
-Analyzes all your memories and sessions to generate or update `~/.claude/skills/proxyme/${LOGNAME}-identity.md`.
+Analyzes all your memories and sessions to generate or update the **project-scoped** identity at `<root>/.claude/proxyme/${LOGNAME}-identity.md`.
+
+The *scan* stays machine-wide — synthesis reads all of `~/.claude/projects/` because a profile built from one repo's history is a thin profile. Only the *output* is project-scoped.
+
+Resolve paths first; `PLUGIN_ROOT` is the directory two levels above this skill's base directory (stated in the launch header). `$CLAUDE_PLUGIN_ROOT` is **not** set in Bash tool calls.
+
+```bash
+eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"
+```
+
+That defines `PROXYME_DIR` and `PROXYME_IDENTITY`, assumed in scope below.
 
 Run this whenever you want to refresh your proxy identity. You don't need to run it every session.
 
@@ -191,7 +201,7 @@ OUTPUT D (sessions): {output_agente_D}
 
 **Check if previous version exists:**
 ```bash
-test -f ~/.claude/skills/proxyme/${LOGNAME}-identity.md && echo "EXISTS" || echo "MISSING"
+eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"; test -f "$PROXYME_IDENTITY" && echo "EXISTS" || echo "MISSING"
 ```
 
 **If EXISTS:** Read the current Section 7 and split it into two kinds of content — they are handled differently:
@@ -204,13 +214,13 @@ test -f ~/.claude/skills/proxyme/${LOGNAME}-identity.md && echo "EXISTS" || echo
 **Staleness check before preserving anything:** grep the current `/proxyme` skill for every flag and mode the existing Section 7 mentions. Anything not found there is stale — drop it, and say so in the step-4 report.
 
 ```bash
-grep -oE '`--[a-z-]+`' ~/.claude/skills/proxyme/${LOGNAME}-identity.md | sort -u
+grep -oE '`--[a-z-]+`' "$PROXYME_IDENTITY" | sort -u
 grep -oE '\-\-[a-z-]+' "$(dirname "$0")/../proxyme/SKILL.md" | sort -u
 ```
 
 Anything in the first list and missing from the second is a removed flag: do not carry it forward.
 
-**Save:** Write the synthesis agent's output to `~/.claude/skills/proxyme/${LOGNAME}-identity.md`.
+**Save:** `mkdir -p "$PROXYME_DIR"`, then write the synthesis agent's output to `$PROXYME_IDENTITY`.
 
 ### 4. Confirm to user
 
@@ -223,4 +233,4 @@ Display:
 
 **Next:** run `/proxyme-validate` to score the new identity against held-out questions before relying on it.
 
-**Note:** The generated identity file is user-specific and should not be committed to the plugin repository.
+**Note:** The generated identity file is a personal profile and must never be committed. `/proxyme` adds `.claude/proxyme/` to `.git/info/exclude` when it seeds a project; if you ran this skill directly in a repo where that has not happened, add it yourself before committing anything.

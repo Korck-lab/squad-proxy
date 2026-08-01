@@ -19,6 +19,10 @@ eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"
 
 That defines `PROXYME_DIR` and `PROXYME_CONFIG`, assumed in scope by every snippet below.
 
+## Reporting style
+
+Print the blocks below and nothing else — no preamble, no explanation of what the config does, no closing summary, no offer of further help. If a write fails, say so and quote the error verbatim. Ask the picker questions in the language the user is writing in.
+
 ## Syntax
 
 ```

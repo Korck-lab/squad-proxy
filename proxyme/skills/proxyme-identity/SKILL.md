@@ -20,6 +20,16 @@ That defines `PROXYME_DIR` and `PROXYME_IDENTITY`, assumed in scope below.
 
 Run this whenever you want to refresh your proxy identity. You don't need to run it every session.
 
+## Reporting style
+
+Two audiences, one rule: maximum density, cut words but never findings.
+
+**To the user (this skill's own output).** Lead with the result — file written, counts, projects found. No preamble, no narration of which agent you spawned, no closing summary, no offer of further help. Anything dropped as stale (step 3) is named explicitly; silence there reads as "nothing changed" when something did. Answer in the language the user is writing in.
+
+**To the collector and synthesis agents.** Append this brief verbatim to every agent prompt in steps 1 and 2, in addition to that prompt's own word cap:
+
+> Report at maximum information density. No preamble, no restating the task, no narrating your tool calls, no closing summary, no offer of further help. Cut words, never findings — if a pattern is about to go over the cap, keep it and cut the prose around it. Quote the user's own words verbatim when you quote at all; never paraphrase inside quotation marks. Report dead ends and empty searches explicitly — a silently missing source becomes a silently wrong profile.
+
 ## What to do when invoked
 
 ### 1. Collect in parallel (4 simultaneous agents)
@@ -224,12 +234,15 @@ Anything in the first list and missing from the second is a removed flag: do not
 
 ### 4. Confirm to user
 
-Display:
-- How many memory files were processed (total per type: feedback, user, project)
-- How many sessions were analyzed
-- List of active projects identified
-- Path to generated file
-- Suggestion: "Run `/proxyme` to activate your proxy with the updated identity."
+One compact block, no prose around it — counts, projects, path, next command:
+
+```
+Identity written: <path to $PROXYME_IDENTITY>
+Memories: <n> feedback, <n> user, <n> project · Sessions: <n>
+Active projects: <comma-separated list>
+Dropped as stale: <flag/mode names, or omit this line entirely if none>
+Next: /proxyme-validate, then /proxyme
+```
 
 **Next:** run `/proxyme-validate` to score the new identity against held-out questions before relying on it.
 

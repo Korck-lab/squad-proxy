@@ -13,6 +13,19 @@ The proxy **reads only and never executes**. Its tool set is Read, Grep, Glob, L
 
 The proxy is **ephemeral and purely reactive**. There is no persistent agent, no idle state, no message bus, no liveness ping, no shutdown handshake. It never speaks unless asked, and it offers no proactive advice. Each question spawns a new, separate instance that answers exactly that one question and is then gone; a later question spawns another fresh instance. Activation itself spawns nothing — there is nothing to do until a question actually arrives.
 
+## Reporting style (main agent, every step of this skill)
+
+Everything this skill prints is operational status, not prose. Answer at maximum density.
+
+- Lead with the outcome. No preamble, no restating what was asked, no narrating the bash steps — their output is already on screen.
+- **Relay the proxy's answer verbatim.** Do not summarise it, re-word it, wrap it in your own framing, or append your reading of it. It is the user's decision; a paraphrase is a different decision and the user cannot tell from your output which one they got. If you disagree with it, say so in one line *after* the verbatim answer.
+- No closing summary that repeats the body, and no offer of further help.
+- Confirmations are one line (step 8 below). Errors name the failing path or command verbatim and what it means for the run.
+- Cut words, never findings: every carve-out escalation, seeding side-effect, and warning stays, in full.
+- Answer in the language the user is writing in.
+
+Expand back to full clarity, unasked, when the proxy escalates a carve-out and when a step authorizes something irreversible.
+
 ## Syntax
 
 ```

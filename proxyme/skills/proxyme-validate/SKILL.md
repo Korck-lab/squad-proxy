@@ -42,6 +42,24 @@ Why voice does not gate: a wrong-sounding right answer is a cosmetic defect; a r
 
 **Every scorecard must record `rubric_scored`** — the exact dimension list that produced the average. Scores computed under different critic instructions are **not comparable**: a run where the critic was told to penalise each voice violation per-occurrence will report a lower `voice_fidelity` than one where it was not, and reading that as a regression is a measurement error, not a finding. Without `rubric_scored` written down, nobody can tell the two apart later. The canonical schema and a documented real run live in `fixtures/sample-scorecard.json`.
 
+## Reporting style
+
+**To the user.** Lead with the verdict — accepted or escalated — then the gating average, then the per-dimension scores. No preamble, no narrating which agents you spawned, no closing summary, no offer of further help. Report the run as a compact block:
+
+```
+<ACCEPTED at 9.0/10 | ESCALATED after 3 iterations, best 8.1/10>
+decision_alignment <n> · technical_accuracy <n> · boundary_respect <n> · specificity <n> · voice_fidelity <n> (non-gating)
+Iterations: <n> · Edits applied: <one line each, general rules only>
+Re-probe: <n>/<n> passed · New defects introduced: <list, or "none">
+Remaining gaps: <list, or omit the line>
+```
+
+Cut words, never findings. Every defect the critic found stays in the report even on an accepted run — the 2026-07-27 pass cleared 9.2/10 while carrying four real defects, so a score-only report actively misleads. Failures and remaining gaps get named in full; padding around bad news reads as evasion.
+
+**To the critic agent.** Append this brief verbatim to the critic prompt:
+
+> Report at maximum information density. Return the scorecard and nothing else — no preamble, no restating the rubric, no closing summary. For every score below 8, name the specific defect and quote the exact span of the actor's answer that caused it, verbatim and never paraphrased. Proposed adjustments are concrete rewrites of general identity text, not advice about what to consider. Cut words, never findings: an unreported defect is indistinguishable from a clean run.
+
 ## Anti-overfit rule
 
 **Tune the *general* identity only — never insert the specific case.** Adjustments edit the general sections of `$PROXYME_IDENTITY` (heuristics, preferences, voice). The exact validation question/answer pair is **never** written into the file, and held-out questions are re-drawn each pass so the score reflects generalisation, not memorisation.

@@ -171,19 +171,26 @@ PROXY_SKILL="$PROXYME_SKILLS/proxyme/SKILL.md"
 # exercise the artifact, not a copy of it.
 IDENT_SKILL="$PROXYME_SKILLS/proxyme-identity/SKILL.md"
 STALE_FIXTURE="$PROXYME_SKILLS/proxyme-identity/fixtures/stale-flags.md"
-if [ -f "$STALE_FIXTURE" ] && [ -f "$PROXY_SKILL" ] && [ -f "$IDENT_SKILL" ]; then
-  # Pull the fenced bash block that contains the guard, by content not by position.
-  # Keyed on `comm -23`, the guard's defining operation. (It used to key on the
-  # temp-file name /tmp/proxyme-skill-flags; the guard now compares with process
-  # substitution and writes no temp files, so that needle no longer exists. The
-  # locator changed, the assertions below did not.)
+# Pull the fenced bash block that contains the guard, by content not by position.
+# Keyed on `comm -23`, the guard's defining operation. (It used to key on the
+# temp-file name /tmp/proxyme-skill-flags; the guard now compares with process
+# substitution and writes no temp files, so that needle no longer exists. The
+# locator changed, the assertions below did not.)
+#
+# Extracted once, above both users: assertion 7 runs this block, assertion 9
+# reads its section anchor. A second copy of the locator could drift from this
+# one and then fail as if the anchor had moved.
+GUARD_BLOCK=""
+if [ -f "$IDENT_SKILL" ]; then
   GUARD_BLOCK="$(awk '
     /^```bash$/ { inblk=1; buf=""; next }
     /^```$/     { if (inblk && buf ~ /comm -23/) { printf "%s", buf; exit }
                   inblk=0; next }
     inblk       { buf = buf $0 "\n" }
   ' "$IDENT_SKILL")"
+fi
 
+if [ -f "$STALE_FIXTURE" ] && [ -f "$PROXY_SKILL" ] && [ -f "$IDENT_SKILL" ]; then
   if [ -z "$GUARD_BLOCK" ]; then
     fail "could not find the staleness-guard bash block in $IDENT_SKILL"
   else
@@ -254,51 +261,50 @@ done
 # proxy". Only the number survives translation.
 SECTION_NUM=7
 
+# Each check below compares the whole matched text rather than counting matches
+# and then extracting the digits. `grep -oE` already prints one line per match,
+# so a duplicated heading (two lines), a renumbered one (wrong digit) and a
+# missing one (empty) all fail the same equality — the separate count assertions
+# were restating what the comparison already covers.
+#
+# A missing $IDENT_SKILL is already reported by assertion 7 and assertion 8, so
+# this block guards without adding a third failure line for one root cause.
 if [ -f "$IDENT_SKILL" ]; then
   # (a) the synthesis template's heading
-  TPL_HITS="$(grep -cE '^## [0-9]+\. Proxy operational rules' "$IDENT_SKILL" || true)"
-  check "exactly one 'Proxy operational rules' template heading" "$TPL_HITS" "1"
-  TPL_NUM="$(grep -oE '^## [0-9]+\. Proxy operational rules' "$IDENT_SKILL" \
-    | grep -oE '[0-9]+' || true)"
-  check "template heading is section $SECTION_NUM" "$TPL_NUM" "$SECTION_NUM"
+  check "template heading is section $SECTION_NUM, exactly once" \
+    "$(grep -oE '^## [0-9]+\. Proxy operational rules' "$IDENT_SKILL")" \
+    "## $SECTION_NUM. Proxy operational rules"
 
   # (b) the guard's own anchor — read out of the EXTRACTED BLOCK, never the whole
   # file. Prose elsewhere in the skill can legitimately quote a sed anchor (an
   # example, a changelog line, a description of the old behaviour); grepping the
   # file and taking the first hit would silently check that instead of the guard.
-  GUARD_SRC="$(awk '
-    /^```bash$/ { inblk=1; buf=""; next }
-    /^```$/     { if (inblk && buf ~ /comm -23/) { printf "%s", buf; exit }
-                  inblk=0; next }
-    inblk       { buf = buf $0 "\n" }
-  ' "$IDENT_SKILL")"
-  if [ -z "$GUARD_SRC" ]; then
+  if [ -z "$GUARD_BLOCK" ]; then
     fail "could not find the staleness-guard block to check its section anchor"
   else
-    ANCHOR_HITS="$(printf '%s\n' "$GUARD_SRC" | grep -cE '\^## [0-9]+' || true)"
-    check "guard block holds exactly one section anchor" "$ANCHOR_HITS" "1"
-    ANCHOR_NUM="$(printf '%s\n' "$GUARD_SRC" | grep -oE '\^## [0-9]+' \
-      | grep -oE '[0-9]+' || true)"
-    check "guard anchor is section $SECTION_NUM" "$ANCHOR_NUM" "$SECTION_NUM"
+    check "guard anchor is section $SECTION_NUM, exactly once" \
+      "$(printf '%s\n' "$GUARD_BLOCK" | grep -oE '\^## [0-9]+')" "^## $SECTION_NUM"
   fi
 
   # (c) every prose reference to the section, so updating the two mechanical
   # values above cannot leave the surrounding instructions saying something else.
-  BAD_REFS="$(grep -oE 'Section [0-9]+' "$IDENT_SKILL" | sort -u \
-    | grep -v "^Section ${SECTION_NUM}\$" || true)"
-  check "every 'Section N' reference in the skill says $SECTION_NUM" "$BAD_REFS" ""
+  # Scanned across the whole shipped tree, not just this skill: lib/carve-outs.md
+  # names Section 7 as well, and a single-file scan leaves it behind on a
+  # renumber. Stated positively, because the negative form — filter out the good
+  # references, expect nothing left — also passes when there are none at all.
+  check "every 'Section N' reference in the shipped tree says $SECTION_NUM" \
+    "$(grep -rhoE 'Section [0-9]+' "$PROXYME_PLUGIN_ROOT" | sort -u)" \
+    "Section $SECTION_NUM"
 
   # (d) the fixture, so assertion 7 cannot pass while exercising an empty
   # extraction. Frozen at the same number for the same reason: it is this repo's
-  # only representation of the on-disk identity format.
-  if [ -f "$STALE_FIXTURE" ]; then
-    FIX_HITS="$(grep -cE '^## [0-9]+\.' "$STALE_FIXTURE" || true)"
-    check "staleness fixture has exactly one numbered section" "$FIX_HITS" "1"
-    FIX_NUM="$(grep -oE '^## [0-9]+\.' "$STALE_FIXTURE" | grep -oE '[0-9]+' || true)"
-    check "staleness fixture is section $SECTION_NUM" "$FIX_NUM" "$SECTION_NUM"
-  fi
-else
-  fail "/proxyme-identity skill missing, anchor drift not checked: $IDENT_SKILL"
+  # only representation of the on-disk identity format. Counted, rather than
+  # required to be the fixture's ONLY numbered section: the guard's `sed` scoping
+  # exists to ignore flags quoted outside section 7, so a fixture that grows such
+  # a section is what would finally exercise the scoping — that must not be a
+  # build failure. Assertion 7 is missing that arm today.
+  check "staleness fixture holds section $SECTION_NUM exactly once" \
+    "$(grep -cE "^## ${SECTION_NUM}\\." "$STALE_FIXTURE")" "1"
 fi
 
 if [ "$FAILS" -ne 0 ]; then

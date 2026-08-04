@@ -297,9 +297,10 @@ done
 # guard first — a guard that reads both generations — and this assertion is what
 # makes that a build failure instead of a silent one.
 #
-# Why a number and not the heading text: the template renders in the user's own
-# language, so a real identity's heading reads e.g. "## 7. Regras operacionais do
-# proxy". Only the number survives translation.
+# Why a number and not the heading text: identity files already on disk were
+# generated before the en-US rule and carry a translated heading — e.g.
+# "## 7. Regras operacionais do proxy". The guard reads those files too, so the
+# heading text is not stable across generations. Only the number is.
 SECTION_NUM=7
 
 # The four checks do NOT share a detection property; each states its own below.

@@ -1,7 +1,7 @@
 ---
 name: skill-validation-before-merge
-description: Nenhuma skill proxyme é considerada "feita" sem ter rodado de ponta a ponta em contexto real.
+description: No proxyme skill counts as "done" until it has run end to end in a real context.
 ---
 
 ## Rule
-Antes de marcar qualquer skill proxyme como completa, ela deve ter sido executada uma vez em contexto real (não simulado, não leitura de spec). A evidência de execução deve estar presente como: (1) test-plan inline no arquivo de skill, ou (2) arquivo `.test.sh` no mesmo diretório documentando o que foi testado e o resultado observado. Skill sem evidência de execução real = work in progress.
+Before any proxyme skill is marked complete, it must have been executed once in a real context — not simulated, not read off a spec. The evidence of that run must be present as either (1) an inline test plan in the skill file, or (2) a `.test.sh` file in the same directory documenting what was tested and the result observed. A skill with no real-run evidence is work in progress.

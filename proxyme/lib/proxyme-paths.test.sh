@@ -232,6 +232,43 @@ for skill in proxyme proxyme-identity proxyme-validate proxyme-model; do
   fi
 done
 
+# --- Assertion 9: the staleness guard's section anchor tracks the template ----
+# The guard scopes the identity side with `sed -n '/^## N\./,$p'`, where N must be
+# the number of the synthesis template's "Proxy operational rules" section. Both
+# live in proxyme-identity/SKILL.md, coupled by nothing but this assertion.
+#
+# Why the anchor is a number and not the heading text: the template is rendered in
+# the user's own language, so a real identity's heading reads e.g.
+# "## 7. Regras operacionais do proxy". Only the number survives translation.
+#
+# The failure this catches is silent. Renumber the template without moving the
+# anchor and `sed` prints nothing, the identity side of the `comm` is empty, and
+# the guard reports "nothing stale" for every identity, forever — the same
+# under-report shape the guard's own prose warns about.
+if [ -f "$IDENT_SKILL" ]; then
+  TPL_NUM="$(grep -oE '^## [0-9]+\. Proxy operational rules' "$IDENT_SKILL" \
+    | grep -oE '[0-9]+' | head -1 || true)"
+  # `\^## N` matches only inside the sed anchor: the template heading has no caret.
+  ANCHOR_NUM="$(grep -oE '\^## [0-9]+' "$IDENT_SKILL" | grep -oE '[0-9]+' | head -1 || true)"
+
+  if [ -z "$TPL_NUM" ]; then
+    fail "synthesis template has no '## N. Proxy operational rules' heading"
+  elif [ -z "$ANCHOR_NUM" ]; then
+    fail "staleness guard has no '/^## N\\.' section anchor"
+  else
+    check "guard anchor tracks the template's section number" "$ANCHOR_NUM" "$TPL_NUM"
+  fi
+
+  # The fixture must sit in the same section the anchor selects, or assertion 7
+  # is exercising an empty extraction and proving nothing.
+  if [ -f "$STALE_FIXTURE" ] && [ -n "$ANCHOR_NUM" ]; then
+    FIX_NUM="$(grep -oE '^## [0-9]+\.' "$STALE_FIXTURE" | grep -oE '[0-9]+' | head -1 || true)"
+    check "staleness fixture uses the same section number" "$FIX_NUM" "$ANCHOR_NUM"
+  fi
+else
+  fail "/proxyme-identity skill missing, anchor drift not checked: $IDENT_SKILL"
+fi
+
 if [ "$FAILS" -ne 0 ]; then
   echo "RESULT: $FAILS assertion(s) failed" >&2
   exit 1

@@ -120,8 +120,14 @@ $RESULT"
 # header, not in SKILL.md — SKILL.md points here instead — per the
 # evidence-lives-in-tests policy (assertion 8 in lib/proxyme-paths.test.sh).
 THIS_FILE="${BASH_SOURCE[0]}"
+# Search only the header block (everything before `set -euo pipefail`), not the
+# whole file — the check line itself quotes the needle 'Observed result', so an
+# unrestricted grep against $THIS_FILE always matches itself and never fails,
+# even if the header evidence it exists to protect is deleted.
+HEADER="$(sed -n '1,/^set -euo pipefail/p' "$THIS_FILE")"
 grep -q '8.5/10' "$SKILL"              || fail "SKILL.md does not document the 8.5/10 threshold"
-grep -q 'Observed result' "$THIS_FILE" || fail "this test's own header no longer documents the observed real-run result"
+printf '%s' "$HEADER" | grep -q 'Observed result' \
+  || fail "this test's own header no longer documents the observed real-run result"
 grep -q 'rubric_scored' "$SKILL"       || fail "SKILL.md does not require rubric_scored on the scorecard"
 grep -q 'Edge re-probe' "$SKILL"       || fail "SKILL.md does not document the mandatory edge re-probe"
 grep -qi 'never gates\|reported only' "$SKILL" \

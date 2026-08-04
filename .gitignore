@@ -18,13 +18,13 @@ graphify-out/
 .remember/
 claudei.sh
 AGENTS.md
-docs/
 
-# >>> dev-squad shared team assets (managed — do not edit) >>>
-.claude/*
-!.claude/guardrails/
-!.claude/dev-squad.local.md
-.dev-squad/*
-!.dev-squad/adr/
-!.dev-squad/memory/
-# <<< dev-squad shared team assets (managed) <<<
+# Docs are local working material, except the two shared, durable records.
+# Note the `docs/*` form: git cannot re-include a path whose parent directory
+# is itself excluded, so `docs/` would make the un-ignores below dead letters.
+docs/*
+!docs/adr/
+!docs/guardrails/
+
+# Project-local Claude state
+.claude/

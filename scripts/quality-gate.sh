@@ -105,6 +105,8 @@ run_check "pre-push guard blocks an unGated commit" \
 # real gate from inside the gate.
 run_check "open-pr refuses a red gate, a dirty tree and an empty pull request" \
   ./scripts/open-pr.test.sh
+run_check "merge-pr refuses a red gate, a stale head sha and an unclean pull request" \
+  ./scripts/merge-pr.test.sh
 
 # --- Verdict ------------------------------------------------------------------
 VERSION="$(tr -d '[:space:]' < proxyme/VERSION)"

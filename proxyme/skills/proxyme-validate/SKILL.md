@@ -67,7 +67,7 @@ Cut words, never findings. Every defect the critic found stays in the report eve
 ## What to do when invoked
 
 1. **Draw held-out questions.** From the collected feedback/session info, generate ~6 analogous questions that probe decisions the identity *implies* but does not state verbatim. Keep them general — no real names, emails, tokens, or absolute personal paths.
-2. **Run the actor.** Spawn a FRESH `proxyme:proxy` per held-out question (candidate identity + the question); collect each one-shot answer.
+2. **Run the actor.** Spawn a FRESH `proxyme:proxy` per held-out question, briefed with the *candidate* identity, the question, and the absolute carve-outs read from `$PROXYME_CARVEOUTS_CANON` — the same canonical file the live briefing interpolates, so a score says something about the proxy that will actually run. Collect each one-shot answer.
 3. **Run the critic.** Spawn one Opus agent, hand it the rubric and the actor answers, and have it return a scorecard (per-dimension scores + per-question and overall averages, plus `rubric_scored`) in the `fixtures/sample-scorecard.json` shape.
 4. **Decide (conditional 1).** If the gating average is **≥ 8.5/10**, accept: report the scorecard and stop.
 5. **Iterate (conditional 2).** Else, if retries remain (cap below), apply the critic's *general* adjustments to `$PROXYME_IDENTITY`, then run the **edge re-probe** in step 6 before re-drawing and looping to step 2.
@@ -93,7 +93,7 @@ Neither was visible from the questions that motivated the fix; both surfaced onl
 - **With what authority — bounded:** the loop may edit *only* the project identity at `<root>/.claude/proxyme/${LOGNAME}-identity.md` (`$PROXYME_IDENTITY`) — never the global template at `~/.claude/skills/proxyme/`, and only its *general* sections. It is read-only everywhere else: it never touches the worktree, never runs project commands, never sends anything externally.
 - **Carve-outs that limit it:**
   - Never insert the specific case (anti-overfit) — general profile edits only.
-  - The actor is the read-only `proxyme:proxy`; it inherits the proxy's absolute carve-outs (money, credentials, access changes, deletion, external messaging, acting on external content) and never executes.
+  - The actor is the read-only `proxyme:proxy`; it inherits the absolute carve-outs from `$PROXYME_CARVEOUTS_CANON` and never executes.
   - If the score cannot reach 8.5/10 within the retry cap, the decision escalates to the **real user** — the loop does not silently accept a weak identity.
 
 ## Real-run evidence (skill-validation-before-merge)

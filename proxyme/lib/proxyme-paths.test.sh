@@ -65,6 +65,36 @@ else
 fi
 rm -rf "$CONTROL_DIR"
 
+# --- Assertion 4: the policy exists exactly once in the shipped tree ---------
+# The needle is read from the canonical file at runtime, so this test file never
+# contains the literal and therefore never counts itself. *.test.sh is excluded
+# so a test fixture can quote the policy without tripping the invariant.
+if [ -f "$PROXYME_CARVEOUTS_CANON" ]; then
+  pass "canonical carve-outs file exists"
+  NEEDLE="$(grep -m1 '^- ' "$PROXYME_CARVEOUTS_CANON" | sed 's/^- //')"
+  HITS="$(grep -rlF "$NEEDLE" "$PROXYME_PLUGIN_ROOT" | grep -v '\.test\.sh$' | sort)"
+  HIT_COUNT="$(printf '%s\n' "$HITS" | grep -c . || true)"
+  check "policy appears exactly once in the shipped tree" "$HIT_COUNT" "1"
+  check "the single hit is the canonical file" "$HITS" "$PROXYME_CARVEOUTS_CANON"
+else
+  fail "canonical carve-outs file missing: $PROXYME_CARVEOUTS_CANON"
+fi
+
+# --- Assertion 5: README parity ----------------------------------------------
+# README.md is at the repo root, one level above the plugin root, and does not
+# ship. It is checked, not generated: the six items must match the canonical
+# text in the same order once markdown emphasis is stripped.
+REPO_ROOT="$(cd "$PROXYME_PLUGIN_ROOT/.." && pwd)"
+README="$REPO_ROOT/README.md"
+if [ -f "$README" ]; then
+  CANON_ITEMS="$(grep '^- ' "$PROXYME_CARVEOUTS_CANON" | sed 's/^- //')"
+  README_ITEMS="$(sed -n '/^### Never decides/,/^###[^#]/p' "$README" \
+    | grep '^- ' | sed 's/^- //; s/\*\*//g')"
+  check "README lists the same six items in the same order" "$README_ITEMS" "$CANON_ITEMS"
+else
+  fail "README not found: $README"
+fi
+
 if [ "$FAILS" -ne 0 ]; then
   echo "RESULT: $FAILS assertion(s) failed" >&2
   exit 1

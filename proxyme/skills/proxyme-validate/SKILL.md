@@ -56,9 +56,9 @@ Remaining gaps: <list, or omit the line>
 
 Cut words, never findings. Every defect the critic found stays in the report even on an accepted run — the 2026-07-27 pass cleared 9.2/10 while carrying four real defects, so a score-only report actively misleads. Failures and remaining gaps get named in full; padding around bad news reads as evasion.
 
-**To the critic agent.** Append this brief verbatim to the critic prompt:
+**To the critic agent.** Append the contents of `$PROXYME_TERSE_CONTRACT` verbatim to the critic prompt, followed by this delta:
 
-> Report at maximum information density. Return the scorecard and nothing else — no preamble, no restating the rubric, no closing summary. For every score below 8, name the specific defect and quote the exact span of the actor's answer that caused it, verbatim and never paraphrased. Proposed adjustments are concrete rewrites of general identity text, not advice about what to consider. Cut words, never findings: an unreported defect is indistinguishable from a clean run.
+> **Your delta:** return the scorecard and nothing else. For every score below 8, name the specific defect and quote the exact span of the actor's answer that caused it, verbatim and never paraphrased. Proposed adjustments are concrete rewrites of general identity text, not advice about what to consider. An unreported defect is indistinguishable from a clean run.
 
 ## Anti-overfit rule
 

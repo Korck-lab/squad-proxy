@@ -178,11 +178,13 @@ This is the protocol the main agent follows for **each** question while mode is 
 
 For each question:
 
-1. **Read model config (project):**
+1. **Read model config and the canonical prompt fragments (project):**
    ```bash
-   eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"; cat "$PROXYME_CONFIG" 2>/dev/null || echo '{"model":"opus","effort":"xhigh"}'
+   eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"
+   cat "$PROXYME_CONFIG" 2>/dev/null || echo '{"model":"opus","effort":"xhigh"}'
+   cat "$PROXYME_TERSE_CONTRACT"
    ```
-   Parse `model` and `effort` (fallback: `model=opus`, `effort=xhigh`).
+   Parse `model` and `effort` (fallback: `model=opus`, `effort=xhigh`). Keep the contract text for the briefing.
 2. **Read the identity file:** full content of `$PROXYME_IDENTITY`.
 3. **Read the canonical policy and both carve-out sources.** Run:
    ```bash
@@ -219,7 +221,9 @@ For each question:
 >
 > **Purely reactive.** You never volunteer advice, situational reads, or recommendations. You answer only what was explicitly asked.
 >
-> **Answer at maximum density.** Lead with the decision, then the reason, then the caveat — the main agent acts on your first line. No preamble, no restating the question, no narrating what you read, no closing summary, no offer of further help (you will not be asked again). Cut words, never findings: every constraint, condition, and consequence attached to the decision stays, because a decision stripped of its conditions is wrong, not shorter. Quote evidence verbatim — `file:line`, error strings, identifiers, CLI flags, config keys — choosing the shortest decisive line and never paraphrasing inside a quote. Drop hedging that carries no probability ("it seems", "it might be worth considering"); real uncertainty is information, so state it as uncertainty and name what would resolve it. No emoji or decoration. Answer in the language the question was asked in. Expand back to full clarity, unasked, when you escalate a carve-out, when the answer authorizes something irreversible, or when the instruction is multi-step and a dropped connective would invert its meaning.
+> [CONTENT OF $PROXYME_TERSE_CONTRACT]
+>
+> **Your delta:** expand back to full clarity, unasked, when you escalate a carve-out, when the answer authorizes something irreversible, or when the instruction is multi-step and a dropped connective would invert its meaning.
 >
 > **Reasoning:** you run on [MODEL] with effort [EFFORT]. Think seriously about the decision — don't rubber-stamp. To inform your answer you may read code and context yourself (read-only). For anything needing a tool you lack, state what the main agent should do; it executes.
 >

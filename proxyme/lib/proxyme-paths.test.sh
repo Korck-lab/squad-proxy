@@ -100,6 +100,26 @@ else
   [ -f "$PROXYME_CARVEOUTS_CANON" ] || fail "canonical file missing, README parity not checked"
 fi
 
+# --- Assertion 6: the density contract exists exactly once -------------------
+# "Quote evidence verbatim" is the distinguishing phrase of the AGENT-PROMPT
+# contract. The skills' own reporting-style sections stay inline by design and
+# do not contain it. As with assertion 4 the needle is read from the file, and
+# *.test.sh is excluded.
+if [ -f "$PROXYME_TERSE_CONTRACT" ]; then
+  pass "canonical terse-contract file exists"
+  TNEEDLE="$(grep -m1 -o 'Quote evidence verbatim' "$PROXYME_TERSE_CONTRACT" || true)"
+  if [ -z "$TNEEDLE" ]; then
+    fail "terse-contract is missing its distinguishing phrase 'Quote evidence verbatim'"
+  else
+    THITS="$(grep -rlF "$TNEEDLE" "$PROXYME_PLUGIN_ROOT" | grep -v '\.test\.sh$' | sort)"
+    THIT_COUNT="$(printf '%s\n' "$THITS" | grep -c . || true)"
+    check "density contract appears exactly once in the shipped tree" "$THIT_COUNT" "1"
+    check "the single hit is the canonical contract" "$THITS" "$PROXYME_TERSE_CONTRACT"
+  fi
+else
+  fail "canonical terse-contract file missing: $PROXYME_TERSE_CONTRACT"
+fi
+
 if [ "$FAILS" -ne 0 ]; then
   echo "RESULT: $FAILS assertion(s) failed" >&2
   exit 1

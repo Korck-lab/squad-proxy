@@ -26,9 +26,14 @@ Two audiences, one rule: maximum density, cut words but never findings.
 
 **To the user (this skill's own output).** Lead with the result — file written, counts, projects found. No preamble, no narration of which agent you spawned, no closing summary, no offer of further help. Anything dropped as stale (step 3) is named explicitly; silence there reads as "nothing changed" when something did. Answer in the language the user is writing in.
 
-**To the collector and synthesis agents.** Append this brief verbatim to every agent prompt in steps 1 and 2, in addition to that prompt's own word cap:
+**To the collector and synthesis agents.** Append the contents of `$PROXYME_TERSE_CONTRACT` verbatim to every agent prompt in steps 1 and 2, followed by this delta:
 
-> Report at maximum information density. No preamble, no restating the task, no narrating your tool calls, no closing summary, no offer of further help. Cut words, never findings — if a pattern is about to go over the cap, keep it and cut the prose around it. Quote the user's own words verbatim when you quote at all; never paraphrase inside quotation marks. Report dead ends and empty searches explicitly — a silently missing source becomes a silently wrong profile.
+> **Your delta:** respect the word cap stated in your own prompt — if a pattern is about to go over it, keep the pattern and cut the prose around it. Quote the user's own words verbatim when you quote at all; never paraphrase inside quotation marks.
+
+Read it with:
+```bash
+eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"; cat "$PROXYME_TERSE_CONTRACT"
+```
 
 ## What to do when invoked
 

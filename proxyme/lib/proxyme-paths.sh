@@ -18,6 +18,12 @@
 # $HOME and silently share one global state directory — the exact behaviour this
 # file exists to remove.
 #
+# Plugin resolution:
+#   PROXYME_PLUGIN_ROOT is derived from this file's own location, so a caller
+#   that can run this script can address every plugin-internal path without
+#   deriving one. Callers still need the plugin root to invoke this script —
+#   that bootstrap is stated once in each skill and cannot be removed.
+#
 # Deliberately no `pipefail`: the SID fallback pipes `tty`, which fails in every
 # non-interactive shell (all subagents), and under pipefail + `set -e` that
 # aborts the script before anything is printed.
@@ -45,6 +51,12 @@ SID="${CLAUDE_CODE_SESSION_ID:-}"
 
 ROOT_HASH="$(printf '%s' "$ROOT" | shasum | cut -c1-12)"
 
+# The plugin root is derived from THIS FILE's location, never from the caller,
+# never from $PWD, and never from CLAUDE_PLUGIN_ROOT (which is unset in Bash
+# tool calls). lib/ sits one level below the plugin root.
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PLUGIN_ROOT="$(cd "${LIB_DIR}/.." && pwd)"
+
 cat <<EOF
 PROXYME_ROOT="${ROOT}"
 PROXYME_DIR="${ROOT}/.claude/proxyme"
@@ -56,4 +68,10 @@ PROXYME_GLOBAL_CONFIG="${HOME}/.claude/skills/proxyme/config.json"
 PROXYME_USER="${USER_NAME}"
 PROXYME_SID="${SID}"
 PROXYME_FLAG="/tmp/proxyme-${ROOT_HASH}-${SID}.active"
+PROXYME_PLUGIN_ROOT="${PLUGIN_ROOT}"
+PROXYME_LIB="${PLUGIN_ROOT}/lib"
+PROXYME_SKILLS="${PLUGIN_ROOT}/skills"
+PROXYME_CARVEOUTS_CANON="${PLUGIN_ROOT}/lib/carve-outs.md"
+PROXYME_TERSE_CONTRACT="${PLUGIN_ROOT}/lib/terse-contract.md"
+PROXYME_SMART_CLIP="${PLUGIN_ROOT}/lib/smart-clip.sh"
 EOF

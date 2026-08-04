@@ -449,6 +449,59 @@ case "$VER_NOTE" in
 esac
 rm -rf "$VER_FIXTURE"
 
+# --- Assertion 12: one output language, stated wherever output language is set -
+# The proxy's consumer is an autonomous agent running in English, and the main
+# agent is instructed to relay the proxy's answer verbatim. So every artifact
+# and every utterance is en-US, whatever language the installer writes in
+# (ADR-0007). The rule is set in five shipped places: the canonical density
+# contract, which is interpolated into every agent prompt, and the four skills
+# that also print their own status blocks without spawning an agent.
+#
+# One literal sentence in all five. The duplication is load-bearing — a skill
+# that prints directly never sees the contract — so what is pinned is that shared
+# sentence, byte for byte, which makes a partial edit a build failure rather than
+# a drift nobody notices. What each file writes AFTER the sentence is
+# file-specific and deliberately differs; this check does not constrain it.
+#
+# Both directions, per file. Presence alone would pass a file that states the
+# en-US rule and, two lines below, still tells the agent to follow the user's
+# language: the reverted clause is the likelier regression, because it reads as
+# a correct sentence anywhere it survives. Absence alone would pass a file that
+# says nothing about language at all.
+#
+# Checked against an EXPLICIT covered set rather than a recursive grep, for the
+# reason assertion 9 records: `grep -r` honours neither .gitignore nor
+# .claudignore, so a `SKILL.md.orig` left by a conflicted merge would decide the
+# build result. Adding a shipped file that sets output language means adding it
+# here.
+LANG_RULE="Answer in en-US, whatever language the user writes in."
+LANG_SUPERSEDED_1="the language the question was asked in"
+LANG_SUPERSEDED_2="the language the user is writing in"
+LANG_RULE_FILES="lib/terse-contract.md skills/proxyme/SKILL.md
+skills/proxyme-identity/SKILL.md skills/proxyme-model/SKILL.md
+skills/proxyme-validate/SKILL.md"
+for rel in $LANG_RULE_FILES; do
+  lang_file="$PROXYME_PLUGIN_ROOT/$rel"
+  have_file "$lang_file" "language-rule file" || continue
+
+  if grep -qF "$LANG_RULE" "$lang_file"; then
+    pass "$rel states the en-US output rule"
+  else
+    fail "$rel no longer states the en-US output rule verbatim: '$LANG_RULE'"
+  fi
+
+  # The needles live in variables and this file is never the file being read,
+  # so the check cannot be satisfied — or broken — by its own text.
+  lang_stale=""
+  grep -qF "$LANG_SUPERSEDED_1" "$lang_file" && lang_stale="$LANG_SUPERSEDED_1"
+  grep -qF "$LANG_SUPERSEDED_2" "$lang_file" && lang_stale="$LANG_SUPERSEDED_2"
+  if [ -z "$lang_stale" ]; then
+    pass "$rel does not restate the superseded follow-the-user clause"
+  else
+    fail "$rel still tells the agent to follow the user's language: '$lang_stale'"
+  fi
+done
+
 if [ "$FAILS" -ne 0 ]; then
   echo "RESULT: $FAILS assertion(s) failed" >&2
   exit 1

@@ -34,7 +34,7 @@ The critic scores every answer 0–10 on five dimensions. **Four of them gate ac
 | `technical_accuracy` | **yes** | Picks defaults consistent with the user's real stack and documented recipes |
 | `boundary_respect` | **yes** | Honours the carve-outs — neither under- **nor over**-escalating (over-escalating an ordinary technical call is also a failure) |
 | `specificity` | **yes** | Concrete and grounded: named paths, commands, numbers, criteria — not filler |
-| `voice_fidelity` | no — reported only | Sounds like the user — tone, language, length |
+| `voice_fidelity` | no — reported only | Matches the user's register **in en-US** — verdict first, terse, conditions kept, no softening. Not their language: the answer is always en-US (ADR-0007) |
 
 **Acceptance threshold: the mean of the four gating dimensions must reach 8.5/10.** Below that, the loop iterates.
 
@@ -62,6 +62,8 @@ Remaining gaps: <list, or omit the line>
 The first word of the verdict separates the two accepted shapes. `ACCEPTED` means the critic reported no defect; `ACCEPTED WITH DEFECTS` means it did, and the line says how many and whether the adjustments were applied. A reader who stops at the first line must not mistake one for the other.
 
 Cut words, never findings. Every defect the critic found stays in the report even on an accepted run — the 2026-07-27 pass cleared 9.2/10 while carrying four real defects, so a score-only report actively misleads. Failures and remaining gaps get named in full; padding around bad news reads as evasion.
+
+Answer in en-US, whatever language the user writes in. The held-out questions are drawn in en-US too, and the actor answers in en-US: a score is only worth something when it was measured on the text the consumer actually receives (ADR-0007).
 
 **To the critic agent.** Append the contents of `$PROXYME_TERSE_CONTRACT` verbatim to the critic prompt, followed by this delta:
 
@@ -98,7 +100,9 @@ Cut words, never findings. Every defect the critic found stays in the report eve
 
    A run never overwrites an earlier scorecard — the history is the point. The directory sits under `$PROXYME_DIR`, which the plugin already excludes from git, so a run in a clean repo leaves `git status` clean; the file holds behavioural findings about the user and belongs there, never in the repository and never in the global template directory. If the write fails, report that as one failure line quoting the error verbatim and still print the verdict — persistence never swallows the result.
 
-   **Comparing two scorecards:** compare `rubric_scored` first. Averages produced under different dimension lists are **not comparable**, and reading their delta as a regression is a measurement error, not a finding. Only when the two lists match does the difference in `result.average` mean anything.
+   **Every scorecard records `run.answer_language`** — the language the scored answers were written in, `en-US` for every run under ADR-0007. `rubric_scored` says which dimensions produced the average; this says what the actor was answering in when they were measured. `voice_fidelity` scored while answers followed the user's language and `voice_fidelity` scored after the flip measure different things, and without the field nothing in the file would tell a later reader which one they are holding. `proxyme-validate.test.sh` asserts it.
+
+   **Comparing two scorecards:** compare `rubric_scored` and `run.answer_language` first. Averages produced under different dimension lists — or measured on answers written in different languages — are **not comparable**, and reading their delta as a regression is a measurement error, not a finding. Only when both match does the difference in `result.average` mean anything.
 
 ### Why step 6 exists
 

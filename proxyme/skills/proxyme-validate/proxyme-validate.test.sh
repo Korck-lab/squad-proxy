@@ -62,6 +62,17 @@ def approx($a;$b): absdiff($a;$b) < 0.05;
     (if ($gate|index("voice_fidelity")) == null then empty
      else "voice_fidelity must NOT be a gating dimension" end),
 
+    # answer_language records the language the scored answers were written in.
+    # rubric_scored already guards WHICH dimensions produced the average; this
+    # guards what the actor was answering in when they were measured. A
+    # voice_fidelity score taken when the answer followed the user language and
+    # one taken after the en-US flip (ADR-0007) measure different things, and
+    # nothing else in the schema would reveal that to a later reader.
+    (if ($sc.run.answer_language|type) == "string" then empty
+     else "run.answer_language missing: scores from before and after the en-US flip would compare as if equal" end),
+    (if $sc.run.answer_language == "en-US" then empty
+     else "run.answer_language is \($sc.run.answer_language): every proxyme artifact and utterance is en-US (ADR-0007)" end),
+
     # rubric_scored must exist and must match exactly the dimensions used for the average.
     (if ($sc.rubric_scored|type) == "array" then empty
      else "rubric_scored missing: averages become non-comparable across runs" end),
@@ -146,6 +157,7 @@ THIS_FILE="${BASH_SOURCE[0]}"
 # even if the header evidence it exists to protect is deleted.
 HEADER="$(sed -n '1,/^set -euo pipefail/p' "$THIS_FILE")"
 grep -q '8.5/10' "$SKILL"              || fail "SKILL.md does not document the 8.5/10 threshold"
+grep -q 'answer_language' "$SKILL"     || fail "SKILL.md does not document answer_language, so a run can omit it and still look complete"
 printf '%s' "$HEADER" | grep -q 'Observed result' \
   || fail "this test's own header no longer documents the observed real-run result"
 grep -q 'rubric_scored' "$SKILL"       || fail "SKILL.md does not require rubric_scored on the scorecard"

@@ -13,6 +13,8 @@ caveat — the reader acts on your first line; everything after it is support.
   considering"). Real uncertainty is information: state it as uncertainty and
   name what would resolve it.
 - No emoji, no decoration, no bold on every third word.
-- Answer in the language the question was asked in.
+- Answer in en-US, whatever language the user writes in. Quoted user text is
+  translated to en-US and tagged with its source language — `"…" [translated
+  from pt-BR]` — so a translation is never read as the user's exact words.
 - Report dead ends and empty searches explicitly — a silently missing source
   becomes a silently wrong result.

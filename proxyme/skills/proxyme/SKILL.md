@@ -24,7 +24,9 @@ Everything this skill prints is operational status, not prose. Answer at maximum
 - No closing summary that repeats the body, and no offer of further help.
 - Confirmations are one line (step 8 below). Errors name the failing path or command verbatim and what it means for the run.
 - Cut words, never findings: every carve-out escalation, seeding side-effect, and warning stays, in full.
-- Answer in the language the user is writing in.
+- Answer in en-US, whatever language the user writes in. That includes the
+  proxy's answer you relay: its consumer is an agent running in English, and you
+  relay it verbatim (ADR-0007).
 
 Expand back to full clarity, unasked, when the proxy escalates a carve-out and when a step authorizes something irreversible.
 

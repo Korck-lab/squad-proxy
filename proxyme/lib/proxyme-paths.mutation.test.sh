@@ -128,6 +128,29 @@ expect_absent() {
   return 0
 }
 
+# --- cross-suite arms ---------------------------------------------------------
+# The helpers above are shaped for the paths suite: it reports every assertion and
+# always reaches a RESULT: line. The other two colocated suites report differently
+# — the validate one exits on its first failure and never prints RESULT: — so an
+# arm aimed at them asserts on exit status plus a NAMED message instead. Same
+# standard as everywhere else here: "something broke" is not evidence that the
+# assertion under test is the thing that broke.
+run_suite() {
+  ARM_OUT="$(cd "$ARM_DIR" && bash "$ARM_DIR/proxyme/$1" 2>&1)"
+  ARM_RC=$?
+}
+
+expect_suite_green() {
+  [ "$ARM_RC" = 0 ] || arm_err "expected a green suite run; it exited $ARM_RC"
+}
+
+# expect_suite_fail <substring> — nonzero exit AND a failure line naming it.
+expect_suite_fail() {
+  [ "$ARM_RC" != 0 ] || arm_err "expected the suite to fail; it exited 0"
+  printf '%s\n' "$ARM_OUT" | grep -qF "$1" \
+    || arm_err "expected a failure naming \"$1\"; the suite named none"
+}
+
 # --- mutation helpers ---------------------------------------------------------
 
 # edit <file> <sed-script>… — in-place edit without GNU/BSD `sed -i` skew.
@@ -137,6 +160,12 @@ edit() {
 }
 
 ident_skill()  { echo "$ARM_DIR/proxyme/skills/proxyme-identity/SKILL.md"; }
+sess_fixture() { echo "$ARM_DIR/proxyme/skills/proxyme-identity/fixtures/sample-session.jsonl"; }
+score_fixture(){ echo "$ARM_DIR/proxyme/skills/proxyme-validate/fixtures/sample-scorecard.json"; }
+proxy_skill()  { echo "$ARM_DIR/proxyme/skills/proxyme/SKILL.md"; }
+model_skill()  { echo "$ARM_DIR/proxyme/skills/proxyme-model/SKILL.md"; }
+valid_skill()  { echo "$ARM_DIR/proxyme/skills/proxyme-validate/SKILL.md"; }
+contract()     { echo "$ARM_DIR/proxyme/lib/terse-contract.md"; }
 carve_outs()   { echo "$ARM_DIR/proxyme/lib/carve-outs.md"; }
 plugin_dox()   { echo "$ARM_DIR/proxyme/AGENTS.md"; }
 fixture()      { echo "$ARM_DIR/proxyme/skills/proxyme-identity/fixtures/stale-flags.md"; }
@@ -306,6 +335,138 @@ run_arm
 chmod 644 "$(ident_skill)"
 expect_result_line
 expect_fail_count 1 "/proxyme-identity skill missing"
+end_arm
+
+# ==============================================================================
+# Ticket 21 — the output-language rule (assertion 12)
+# ==============================================================================
+
+# The reverted clause is the likelier regression: it reads as a correct sentence
+# wherever it survives, so nothing about the file looks wrong. Reverting the
+# canonical contract must fire BOTH directions — the rule is gone and the
+# superseded clause is back.
+new_arm language-rule-reverted-in-contract
+edit "$(contract)" \
+  -e 's/^- Answer in en-US, whatever language the user writes in\..*$/- Answer in the language the question was asked in./' \
+  -e '/^  translated to en-US and tagged/d' \
+  -e '/^  from pt-BR\]` — so a translation/d'
+run_arm
+expect_fail "lib/terse-contract.md no longer states the en-US output rule"
+expect_fail "lib/terse-contract.md still tells the agent to follow the user's language"
+end_arm
+
+# Deletion, one covered file at a time. Each skill prints its own status block
+# without spawning an agent, so a skill that loses the rule stops being en-US
+# even while the contract still says it — per-file presence is what catches that.
+new_arm language-rule-deleted-in-proxy-skill
+edit "$(proxy_skill)" -e 's/Answer in en-US, whatever language the user writes in\./Answer briefly./'
+run_arm
+expect_fail "skills/proxyme/SKILL.md no longer states the en-US output rule"
+end_arm
+
+new_arm language-rule-deleted-in-identity-skill
+edit "$(ident_skill)" -e 's/Answer in en-US, whatever language the user writes in\./Answer briefly./'
+run_arm
+expect_fail "skills/proxyme-identity/SKILL.md no longer states the en-US output rule"
+end_arm
+
+new_arm language-rule-deleted-in-model-skill
+edit "$(model_skill)" -e 's/Answer in en-US, whatever language the user writes in\./Answer briefly./'
+run_arm
+expect_fail "skills/proxyme-model/SKILL.md no longer states the en-US output rule"
+end_arm
+
+new_arm language-rule-deleted-in-validate-skill
+edit "$(valid_skill)" -e 's/Answer in en-US, whatever language the user writes in\./Answer briefly./'
+run_arm
+expect_fail "skills/proxyme-validate/SKILL.md no longer states the en-US output rule"
+end_arm
+
+# Presence alone is not enough: a file can state the en-US rule and, further
+# down, still tell the agent to follow the user. This arm keeps the rule intact
+# so the presence check passes, and proves the absence check fires anyway.
+new_arm language-rule-present-but-superseded-clause-reintroduced
+printf '\nWhen replying to the picker, answer in the language the user is writing in.\n' >> "$(model_skill)"
+run_arm
+expect_fail "skills/proxyme-model/SKILL.md still tells the agent to follow the user's language"
+expect_fail_count 0 "skills/proxyme-model/SKILL.md no longer states the en-US output rule"
+end_arm
+
+# ==============================================================================
+# Ticket 21 — the sibling suites' ADR-0007 assertions
+# ==============================================================================
+#
+# The language rule spans three suites, so mutation coverage has to as well.
+# Without these arms the identity and validate assertions would rest on a manual
+# run recorded in a comment — which is exactly the "reviewer asserts it" shape
+# this harness exists to replace.
+
+IDENT_SUITE="skills/proxyme-identity/proxyme-identity.test.sh"
+VALID_SUITE="skills/proxyme-validate/proxyme-validate.test.sh"
+
+new_arm identity-suite-baseline
+run_suite "$IDENT_SUITE"
+expect_suite_green
+end_arm
+
+# Extraction must stay language-agnostic: a filter that quietly dropped
+# non-English turns would thin a pt-BR user's identity without failing anything.
+new_arm session-fixture-loses-its-non-english-turn
+edit "$(sess_fixture)" -e '$d'
+edit "$(sess_fixture)" -e '$d'
+run_suite "$IDENT_SUITE"
+expect_suite_fail "indexes a non-English human turn"
+end_arm
+
+# The tag is what stops a translation from being read as the user's exact words.
+new_arm identity-skill-drops-the-translation-tag
+edit "$(ident_skill)" -e 's/\[translated from pt-BR\]/[quoted]/g'
+run_suite "$IDENT_SUITE"
+expect_suite_fail "skill requires the translation tag"
+end_arm
+
+# The in-place conversion of a pre-ADR-0007 file, and the report line that makes
+# it visible, are one condition — deleting the report line deletes the evidence.
+new_arm identity-skill-drops-the-conversion-report-line
+edit "$(ident_skill)" -e 's/^Converted to en-US: .*/Notes: <free text>/'
+run_suite "$IDENT_SUITE"
+expect_suite_fail "converts a pre-ADR-0007 identity in place"
+end_arm
+
+# A language check that always answers ALREADY_EN_US reads exactly like a working
+# one and would silently convert nothing, forever. The suite extracts the shipped
+# snippet and runs it, so a snippet blind to its input fails.
+new_arm identity-skill-language-check-goes-blind
+edit "$(ident_skill)" -e 's|^headings() [{] grep .*|headings() { echo same; }|'
+run_suite "$IDENT_SUITE"
+expect_suite_fail "shipped language check on a translated identity"
+end_arm
+
+new_arm validate-suite-baseline
+run_suite "$VALID_SUITE"
+expect_suite_green
+end_arm
+
+# Without answer_language a voice_fidelity score from before the flip and one
+# from after compare as if they measured the same thing.
+new_arm scorecard-loses-answer-language
+edit "$(score_fixture)" -e '/"answer_language":/d'
+run_suite "$VALID_SUITE"
+expect_suite_fail "answer_language"
+end_arm
+
+# A run may record the field truthfully and still be off-policy; the assertion
+# pins the value, not just the key.
+new_arm scorecard-records-a-non-en-us-answer-language
+edit "$(score_fixture)" -e 's/"answer_language": "en-US"/"answer_language": "pt-BR"/'
+run_suite "$VALID_SUITE"
+expect_suite_fail "answer_language"
+end_arm
+
+new_arm validate-skill-stops-documenting-answer-language
+edit "$(valid_skill)" -e 's/answer_language/answer_lang/g'
+run_suite "$VALID_SUITE"
+expect_suite_fail "does not document answer_language"
 end_arm
 
 # ==============================================================================

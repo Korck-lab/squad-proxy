@@ -124,6 +124,37 @@ fi
 [ -x "$PROXYME_SMART_CLIP" ] && pass "PROXYME_SMART_CLIP is executable" \
   || fail "PROXYME_SMART_CLIP is not executable: $PROXYME_SMART_CLIP"
 
+# --- Assertion 7: the staleness guard reads a real file ----------------------
+# The guard compares flags an identity mentions against flags /proxyme actually
+# documents. It used to derive the skill path from $0, which under the Bash tool
+# is the tool's own temp script — so the grep read nothing and reported nothing
+# stale, whatever the identity said. First prove the old derivation is broken,
+# then prove the new one works.
+OLD_STYLE="$SCRIPT_DIR/../proxyme/SKILL.md"     # what $(dirname "$0")/../proxyme/ resolved to
+[ ! -f "$OLD_STYLE" ] && pass "old \$0-derived skill path does not resolve (regression proven)" \
+  || fail "old \$0-derived path unexpectedly resolves: $OLD_STYLE"
+
+PROXY_SKILL="$PROXYME_SKILLS/proxyme/SKILL.md"
+[ -f "$PROXY_SKILL" ] && pass "PROXYME_SKILLS resolves the /proxyme skill" \
+  || fail "PROXYME_SKILLS does not reach the /proxyme skill: $PROXY_SKILL"
+
+STALE_FIXTURE="$PROXYME_SKILLS/proxyme-identity/fixtures/stale-identity.md"
+if [ -f "$STALE_FIXTURE" ] && [ -f "$PROXY_SKILL" ]; then
+  IDENT_FLAGS="$(grep -oE '\-\-[a-z-]+' "$STALE_FIXTURE" | sort -u)"
+  SKILL_FLAGS="$(grep -oE '\-\-[a-z-]+' "$PROXY_SKILL" | sort -u)"
+  STALE="$(comm -23 <(printf '%s\n' "$IDENT_FLAGS") <(printf '%s\n' "$SKILL_FLAGS"))"
+  case "$STALE" in
+    *--nonew*) pass "guard reports --nonew as stale" ;;
+    *)         fail "guard did not report --nonew as stale (got: '$STALE')" ;;
+  esac
+  case "$STALE" in
+    *--off*) fail "guard wrongly reported --off, which /proxyme still documents" ;;
+    *)       pass "guard does not report --off, which is current" ;;
+  esac
+else
+  fail "staleness fixture or /proxyme skill missing"
+fi
+
 if [ "$FAILS" -ne 0 ]; then
   echo "RESULT: $FAILS assertion(s) failed" >&2
   exit 1

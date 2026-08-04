@@ -221,11 +221,14 @@ eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"; test -f "$PROXYME_IDENTITY"
 **Staleness check before preserving anything:** grep the current `/proxyme` skill for every flag and mode the existing Section 7 mentions. Anything not found there is stale — drop it, and say so in the step-4 report.
 
 ```bash
-grep -oE '`--[a-z-]+`' "$PROXYME_IDENTITY" | sort -u
-grep -oE '\-\-[a-z-]+' "$(dirname "$0")/../proxyme/SKILL.md" | sort -u
+eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"
+grep -oE '\-\-[a-z-]+' "$PROXYME_IDENTITY" | sort -u > /tmp/proxyme-identity-flags.$$
+grep -oE '\-\-[a-z-]+' "$PROXYME_SKILLS/proxyme/SKILL.md" | sort -u > /tmp/proxyme-skill-flags.$$
+comm -23 /tmp/proxyme-identity-flags.$$ /tmp/proxyme-skill-flags.$$
+rm -f /tmp/proxyme-identity-flags.$$ /tmp/proxyme-skill-flags.$$
 ```
 
-Anything in the first list and missing from the second is a removed flag: do not carry it forward.
+Whatever that `comm` prints is a flag the identity mentions and `/proxyme` no longer documents: do not carry it forward, and name it in the step-4 report under `Dropped as stale:`. An empty output means nothing is stale — which, before the path was resolved through `$PROXYME_SKILLS`, was what this check printed unconditionally.
 
 **Save:** `mkdir -p "$PROXYME_DIR"`, then write the synthesis agent's output to `$PROXYME_IDENTITY`.
 

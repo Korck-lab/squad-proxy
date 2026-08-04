@@ -90,7 +90,7 @@ Observed in a real run: the critic's four proposed adjustments were applied and 
 
 Neither was visible from the questions that motivated the fix; both surfaced only when new questions probed the boundary the new wording created. **Re-probe the edge the rule created, not the case that failed.** Instruct the critic explicitly to hunt for defects its own proposed edits introduced — it will not do this unprompted.
 
-**Retry cap: 3 iterations** (mirrors the dev-squad actor/critic `maxRetries=3`). The loop always terminates: accept on pass, or stop and escalate after 3 tries.
+**Retry cap: 3 iterations** (the standard actor/critic bound). The loop always terminates: accept on pass, or stop and escalate after 3 tries.
 
 **Orchestration budget:** this loop uses 3 conditionals — within the ≤5 limit of the no-overthink rule, so a fresh agent runs it end-to-end in one session.
 

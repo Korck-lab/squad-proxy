@@ -4,4 +4,4 @@ description: Toda decisão autônoma do proxy deve ser rastreável — contexto,
 ---
 
 ## Rule
-Skills proxyme e digitalme devem documentar explicitamente "quem decide" e "com que autoridade". Qualquer bloco de delegação autônoma deve identificar: (1) o agente que decide, (2) o contexto em que a decisão é válida, (3) os carve-outs que a limitam. Código ou spec que implemente delegação sem esses três elementos está incompleto.
+Skills proxyme devem documentar explicitamente "quem decide" e "com que autoridade". Qualquer bloco de delegação autônoma deve identificar: (1) o agente que decide, (2) o contexto em que a decisão é válida, (3) os carve-outs que a limitam. Código ou spec que implemente delegação sem esses três elementos está incompleto.

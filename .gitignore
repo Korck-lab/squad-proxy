@@ -20,11 +20,6 @@ claudei.sh
 AGENTS.md
 docs/
 
-# >>> dev-squad shared team assets (managed — do not edit) >>>
+# Project-local Claude state — only guardrails are shared
 .claude/*
 !.claude/guardrails/
-!.claude/dev-squad.local.md
-.dev-squad/*
-!.dev-squad/adr/
-!.dev-squad/memory/
-# <<< dev-squad shared team assets (managed) <<<

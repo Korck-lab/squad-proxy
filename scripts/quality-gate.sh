@@ -101,6 +101,10 @@ run_check "version verifier catches an unbumped commit" \
   ./scripts/verify-version-bump.test.sh
 run_check "pre-push guard blocks an unGated commit" \
   ./scripts/prepush-guard.test.sh
+# No recursion: every arm injects PROXYME_GATE_CMD, so open-pr.sh never runs the
+# real gate from inside the gate.
+run_check "open-pr refuses a red gate, a dirty tree and an empty pull request" \
+  ./scripts/open-pr.test.sh
 
 # --- Verdict ------------------------------------------------------------------
 VERSION="$(tr -d '[:space:]' < proxyme/VERSION)"

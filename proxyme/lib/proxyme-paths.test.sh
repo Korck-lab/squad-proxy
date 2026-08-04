@@ -138,21 +138,45 @@ PROXY_SKILL="$PROXYME_SKILLS/proxyme/SKILL.md"
 [ -f "$PROXY_SKILL" ] && pass "PROXYME_SKILLS resolves the /proxyme skill" \
   || fail "PROXYME_SKILLS does not reach the /proxyme skill: $PROXY_SKILL"
 
-STALE_FIXTURE="$PROXYME_SKILLS/proxyme-identity/fixtures/stale-identity.md"
-if [ -f "$STALE_FIXTURE" ] && [ -f "$PROXY_SKILL" ]; then
-  IDENT_FLAGS="$(grep -oE '\-\-[a-z-]+' "$STALE_FIXTURE" | sort -u)"
-  SKILL_FLAGS="$(grep -oE '\-\-[a-z-]+' "$PROXY_SKILL" | sort -u)"
-  STALE="$(comm -23 <(printf '%s\n' "$IDENT_FLAGS") <(printf '%s\n' "$SKILL_FLAGS"))"
-  case "$STALE" in
-    *--nonew*) pass "guard reports --nonew as stale" ;;
-    *)         fail "guard did not report --nonew as stale (got: '$STALE')" ;;
-  esac
-  case "$STALE" in
-    *--off*) fail "guard wrongly reported --off, which /proxyme still documents" ;;
-    *)       pass "guard does not report --off, which is current" ;;
-  esac
+# Execute the guard AS THE SKILL SHIPS IT — do not reimplement its grep/comm here.
+# A test that restates the algorithm stays green through a full revert of the fix,
+# which is the failure this assertion exists to prevent. Same reasoning as Task 4:
+# exercise the artifact, not a copy of it.
+IDENT_SKILL="$PROXYME_SKILLS/proxyme-identity/SKILL.md"
+STALE_FIXTURE="$PROXYME_SKILLS/proxyme-identity/fixtures/stale-flags.md"
+if [ -f "$STALE_FIXTURE" ] && [ -f "$PROXY_SKILL" ] && [ -f "$IDENT_SKILL" ]; then
+  # Pull the fenced bash block that contains the guard, by content not by position.
+  GUARD_BLOCK="$(awk '
+    /^```bash$/ { inblk=1; buf=""; next }
+    /^```$/     { if (inblk && buf ~ /proxyme-skill-flags/) { printf "%s", buf; exit }
+                  inblk=0; next }
+    inblk       { buf = buf $0 "\n" }
+  ' "$IDENT_SKILL")"
+
+  if [ -z "$GUARD_BLOCK" ]; then
+    fail "could not find the staleness-guard bash block in $IDENT_SKILL"
+  else
+    pass "extracted the staleness-guard block from the shipped skill"
+    RUNNABLE="$(printf '%s' "$GUARD_BLOCK" | sed "s|<PLUGIN_ROOT>|$PROXYME_PLUGIN_ROOT|g")"
+    TMP_PROJ="$(mktemp -d)"
+    mkdir -p "$TMP_PROJ/.claude/proxyme"
+    cp "$STALE_FIXTURE" "$TMP_PROJ/.claude/proxyme/${PROXYME_USER}-identity.md"
+    STALE="$(cd "$TMP_PROJ" && bash -c "$RUNNABLE" 2>/dev/null || true)"
+    rm -rf "$TMP_PROJ"
+
+    case "$STALE" in
+      *--nonew*) pass "shipped guard reports --nonew as stale" ;;
+      *)         fail "shipped guard did not report --nonew as stale (got: '$STALE')" ;;
+    esac
+    case "$STALE" in
+      *--off*) fail "shipped guard wrongly reported --off, which /proxyme still documents" ;;
+      *)       pass "shipped guard does not report --off, which is current" ;;
+    esac
+  fi
 else
-  fail "staleness fixture or /proxyme skill missing"
+  [ -f "$STALE_FIXTURE" ] || fail "staleness fixture missing: $STALE_FIXTURE"
+  [ -f "$PROXY_SKILL" ]   || fail "/proxyme skill missing: $PROXY_SKILL"
+  [ -f "$IDENT_SKILL" ]   || fail "/proxyme-identity skill missing: $IDENT_SKILL"
 fi
 
 if [ "$FAILS" -ne 0 ]; then

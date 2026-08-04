@@ -16,7 +16,7 @@ The identity under test is **project-scoped**, so scores are per-project: a prof
 eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"
 ```
 
-That defines `$PROXYME_IDENTITY`, used throughout below.
+That defines `$PROXYME_IDENTITY`, `$PROXYME_CARVEOUTS_CANON` and `$PROXYME_TERSE_CONTRACT` — the three names used below. Every Bash tool call is a **fresh shell**, so nothing survives between blocks: chain the `eval` into the same call as whatever reads those names.
 
 ## How it works (actor/critic)
 
@@ -67,7 +67,14 @@ Cut words, never findings. Every defect the critic found stays in the report eve
 ## What to do when invoked
 
 1. **Draw held-out questions.** From the collected feedback/session info, generate ~6 analogous questions that probe decisions the identity *implies* but does not state verbatim. Keep them general — no real names, emails, tokens, or absolute personal paths.
-2. **Run the actor.** Spawn a FRESH `proxyme:proxy` per held-out question, briefed with the *candidate* identity, the question, the absolute carve-outs extracted with `sed -n '/^- /p' "$PROXYME_CARVEOUTS_CANON"`, and the density contract from `cat "$PROXYME_TERSE_CONTRACT"` — the same canonical files the live briefing interpolates, extracted the same way, so a score says something about the proxy that will actually run. Collect each one-shot answer.
+2. **Run the actor.** First read the two canonical fragments the briefing needs — one call, `eval` chained in:
+   ```bash
+   eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"
+   sed -n '/^- /p' "$PROXYME_CARVEOUTS_CANON"
+   cat "$PROXYME_TERSE_CONTRACT"
+   ```
+   The `sed` yields the absolute carve-out bullets and nothing else; the `cat` yields the density contract. These are the same canonical files the live briefing interpolates, extracted the same way, so a score says something about the proxy that will actually run.
+   Then spawn a FRESH `proxyme:proxy` per held-out question, briefed with the *candidate* identity, the question, those carve-out bullets, and that density contract. Collect each one-shot answer.
 3. **Run the critic.** Spawn one Opus agent, hand it the rubric and the actor answers, and have it return a scorecard (per-dimension scores + per-question and overall averages, plus `rubric_scored`) in the `fixtures/sample-scorecard.json` shape.
 4. **Decide (conditional 1).** If the gating average is **≥ 8.5/10**, accept: report the scorecard and stop.
 5. **Iterate (conditional 2).** Else, if retries remain (cap below), apply the critic's *general* adjustments to `$PROXYME_IDENTITY`, then run the **edge re-probe** in step 6 before re-drawing and looping to step 2.

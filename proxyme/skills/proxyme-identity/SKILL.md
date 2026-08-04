@@ -96,56 +96,69 @@ List with `find ~/.claude/projects -path "*/memory/*" -name "*.md" | xargs grep 
 Ignore clearly completed or abandoned projects. Return as bulleted project list. Maximum 400 words.
 ```
 
-**Agent D — Sessions (SMART-CLIP extraction)** (`name: "proxyme-identity-sessions"`):
-```
-Sample real user turns from the longest sessions with SMART-CLIP: map each real user
-turn to its line offset, then pull only a bounded context window around it by line
-index. Never load a whole .jsonl into context — clip, do not dump.
+**Agent D — Sessions (SMART-CLIP extraction)** (`name: "proxyme-identity-sessions"`).
 
-1. Pick the 5 longest sessions (most lines), excluding subagents and workflows:
+Resolve the filter's absolute path in **your own** shell before you spawn Agent D. A subagent cannot expand `<PLUGIN_ROOT>`, and it gets no shell state from you — every Bash tool call is a fresh shell — so a placeholder or a bare `$PROXYME_SMART_CLIP` reaches it as an empty string:
 
 ```bash
-find ~/.claude/projects -name "*.jsonl" \
-  ! -path "*/subagents/*" ! -path "*/workflows/*" \
-  | xargs wc -l 2>/dev/null | sort -rn | head -6 | grep -v total
+eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"; echo "$PROXYME_SMART_CLIP"
 ```
 
-2. For each session, run the shipped SMART-CLIP module. It emits one compact
-   JSON record per real human turn — `{user_line, window_lines, before, user,
-   after}` — pulling only a bounded window by line index. Never load a whole
-   `.jsonl` into context; the module never does either.
+**Agent D prompt (use verbatim — interpolate the field between [ ]).** The one field is `[SMART_CLIP_PATH]`: the absolute path just printed. Never hand Agent D the literal `<PLUGIN_ROOT>` or an unexpanded variable name.
 
-```bash
-eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"
-"$PROXYME_SMART_CLIP" "$SESSION"
-```
-
-   `before` holds the model question of the Q/A pair; `after` holds the answer
-   and the model's confirmation-of-understanding, where it restates what it will
-   do.
-
-3. **Why the filter is strict, and why you must not weaken it.** Two classes of
-   `type=="user"` line are not human turns. Harness-injected noise (command
-   echoes, system reminders, task notifications, image metadata, compaction
-   summaries, slash-command caveats) is 20-50% of them. Agent-authored text
-   (`<agent-message>`, cross-session messages, context-usage dumps,
-   `<bash-input>` echoes) is the bigger trap: measured on a real 8.9k-line
-   session, 231 lines passed the pre-2026-07-27 filter and only 98 were human —
-   58% was the proxy's own prose being recycled as if the user had written it,
-   which makes the generated identity self-referential. The module excludes both.
-   `proxyme-identity.test.sh` asserts it, against a synthetic fixture.
-
-4. Label each clip as one of: request / correction-rejection / confirmation / answer,
-   and keep only the most informative ~40 clips across the 5 sessions.
-
-Then consolidate the patterns below in <=600 words (consolidated patterns, not transcriptions):
-
-1. How they formulate requests: style, level of detail, use of slash commands
-2. What they reject mid-task: direct quotes of when they asked to stop, change, or simplify
-3. How much autonomy they give: let you decide or ask for options?
-4. Tone and language: PT-BR? English? Mixed?
-5. Process patterns: prefer research first? Quick iteration? Parallel agents?
-```
+> Sample real user turns from the longest sessions with SMART-CLIP: map each real user
+> turn to its line offset, then pull only a bounded context window around it by line
+> index. Never load a whole .jsonl into context — clip, do not dump.
+>
+> 1. Pick the 5 longest sessions (most lines), excluding subagents and workflows:
+>
+> ```bash
+> find ~/.claude/projects -name "*.jsonl" \
+>   ! -path "*/subagents/*" ! -path "*/workflows/*" \
+>   | xargs wc -l 2>/dev/null | sort -rn | head -6 | grep -v total
+> ```
+>
+> 2. For each session, run the shipped SMART-CLIP module at `[SMART_CLIP_PATH]`. It
+>    emits one compact JSON record per real human turn — `{user_line, window_lines,
+>    before, user, after}` — pulling only a bounded window by line index. Never load
+>    a whole `.jsonl` into context; the module never does either.
+>
+> ```bash
+> "[SMART_CLIP_PATH]" "$SESSION"
+> ```
+>
+>    `before` holds the model question of the Q/A pair; `after` holds the answer
+>    and the model's confirmation-of-understanding, where it restates what it will
+>    do.
+>
+> 3. **Call the module — never reimplement it.** The classification of real human
+>    turns and the line-index windowing are the module's job, not yours. Do not
+>    write your own filter, do not inline an equivalent `jq`/`awk`/`grep` pipeline,
+>    and do not fall back to reading the `.jsonl` directly. If `[SMART_CLIP_PATH]`
+>    is empty, missing, or fails to run, **stop and report that** — return the
+>    error instead of substituting a filter of your own.
+>
+> 4. **Why the filter is strict, and why you must not weaken it.** Two classes of
+>    `type=="user"` line are not human turns. Harness-injected noise (command
+>    echoes, system reminders, task notifications, image metadata, compaction
+>    summaries, slash-command caveats) is 20-50% of them. Agent-authored text
+>    (`<agent-message>`, cross-session messages, context-usage dumps,
+>    `<bash-input>` echoes) is the bigger trap: measured on a real 8.9k-line
+>    session, 231 lines passed the pre-2026-07-27 filter and only 98 were human —
+>    58% was the proxy's own prose being recycled as if the user had written it,
+>    which makes the generated identity self-referential. The module excludes both.
+>    `proxyme-identity.test.sh` asserts it, against a synthetic fixture.
+>
+> 5. Label each clip as one of: request / correction-rejection / confirmation / answer,
+>    and keep only the most informative ~40 clips across the 5 sessions.
+>
+> Then consolidate the patterns below in <=600 words (consolidated patterns, not transcriptions):
+>
+> 1. How they formulate requests: style, level of detail, use of slash commands
+> 2. What they reject mid-task: direct quotes of when they asked to stop, change, or simplify
+> 3. How much autonomy they give: let you decide or ask for options?
+> 4. Tone and language: PT-BR? English? Mixed?
+> 5. Process patterns: prefer research first? Quick iteration? Parallel agents?
 
 ### 2. Synthesize identity
 
@@ -222,11 +235,12 @@ eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"; test -f "$PROXYME_IDENTITY"
 
 ```bash
 eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"
-grep -oE '\-\-[a-z-]+' "$PROXYME_IDENTITY" | sort -u > /tmp/proxyme-identity-flags.$$
-grep -oE '\-\-[a-z-]+' "$PROXYME_SKILLS/proxyme/SKILL.md" | sort -u > /tmp/proxyme-skill-flags.$$
-comm -23 /tmp/proxyme-identity-flags.$$ /tmp/proxyme-skill-flags.$$
-rm -f /tmp/proxyme-identity-flags.$$ /tmp/proxyme-skill-flags.$$
+comm -23 \
+  <(sed -n '/^## 7\./,$p' "$PROXYME_IDENTITY" | grep -oE '\-\-[a-z-]+' | sort -u) \
+  <(grep -oE '\-\-[a-z-]+' "$PROXYME_SKILLS/proxyme/SKILL.md" | sort -u)
 ```
+
+The `sed` scopes the identity side to Section 7 — the only section this step preserves. Unscoped, the grep also matches flags the user quoted elsewhere in their own profile, and the step below would then drop a carve-out it was told to preserve verbatim. The `/proxyme` side stays unscoped: the full flag vocabulary is spread across that whole skill.
 
 Whatever that `comm` prints is a flag the identity mentions and `/proxyme` no longer documents: do not carry it forward, and name it in the step-4 report under `Dropped as stale:`.
 

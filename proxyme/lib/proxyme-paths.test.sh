@@ -173,9 +173,13 @@ IDENT_SKILL="$PROXYME_SKILLS/proxyme-identity/SKILL.md"
 STALE_FIXTURE="$PROXYME_SKILLS/proxyme-identity/fixtures/stale-flags.md"
 if [ -f "$STALE_FIXTURE" ] && [ -f "$PROXY_SKILL" ] && [ -f "$IDENT_SKILL" ]; then
   # Pull the fenced bash block that contains the guard, by content not by position.
+  # Keyed on `comm -23`, the guard's defining operation. (It used to key on the
+  # temp-file name /tmp/proxyme-skill-flags; the guard now compares with process
+  # substitution and writes no temp files, so that needle no longer exists. The
+  # locator changed, the assertions below did not.)
   GUARD_BLOCK="$(awk '
     /^```bash$/ { inblk=1; buf=""; next }
-    /^```$/     { if (inblk && buf ~ /proxyme-skill-flags/) { printf "%s", buf; exit }
+    /^```$/     { if (inblk && buf ~ /comm -23/) { printf "%s", buf; exit }
                   inblk=0; next }
     inblk       { buf = buf $0 "\n" }
   ' "$IDENT_SKILL")"

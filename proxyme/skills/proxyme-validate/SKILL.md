@@ -16,7 +16,7 @@ The identity under test is **project-scoped**, so scores are per-project: a prof
 eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"
 ```
 
-That defines `$PROXYME_IDENTITY`, used throughout below.
+That defines `$PROXYME_IDENTITY`, `$PROXYME_CARVEOUTS_CANON` and `$PROXYME_TERSE_CONTRACT` — the three names used below. Every Bash tool call is a **fresh shell**, so nothing survives between blocks: chain the `eval` into the same call as whatever reads those names.
 
 ## How it works (actor/critic)
 
@@ -56,9 +56,9 @@ Remaining gaps: <list, or omit the line>
 
 Cut words, never findings. Every defect the critic found stays in the report even on an accepted run — the 2026-07-27 pass cleared 9.2/10 while carrying four real defects, so a score-only report actively misleads. Failures and remaining gaps get named in full; padding around bad news reads as evasion.
 
-**To the critic agent.** Append this brief verbatim to the critic prompt:
+**To the critic agent.** Append the contents of `$PROXYME_TERSE_CONTRACT` verbatim to the critic prompt, followed by this delta:
 
-> Report at maximum information density. Return the scorecard and nothing else — no preamble, no restating the rubric, no closing summary. For every score below 8, name the specific defect and quote the exact span of the actor's answer that caused it, verbatim and never paraphrased. Proposed adjustments are concrete rewrites of general identity text, not advice about what to consider. Cut words, never findings: an unreported defect is indistinguishable from a clean run.
+> **Your delta:** return the scorecard and nothing else. For every score below 8, name the specific defect and quote the exact span of the actor's answer that caused it, verbatim and never paraphrased. Proposed adjustments are concrete rewrites of general identity text, not advice about what to consider. An unreported defect is indistinguishable from a clean run.
 
 ## Anti-overfit rule
 
@@ -67,7 +67,14 @@ Cut words, never findings. Every defect the critic found stays in the report eve
 ## What to do when invoked
 
 1. **Draw held-out questions.** From the collected feedback/session info, generate ~6 analogous questions that probe decisions the identity *implies* but does not state verbatim. Keep them general — no real names, emails, tokens, or absolute personal paths.
-2. **Run the actor.** Spawn a FRESH `proxyme:proxy` per held-out question (candidate identity + the question); collect each one-shot answer.
+2. **Run the actor.** First read the two canonical fragments the briefing needs — one call, `eval` chained in:
+   ```bash
+   eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"
+   sed -n '/^- /p' "$PROXYME_CARVEOUTS_CANON"
+   cat "$PROXYME_TERSE_CONTRACT"
+   ```
+   The `sed` yields the absolute carve-out bullets and nothing else; the `cat` yields the density contract. These are the same canonical files the live briefing interpolates, extracted the same way, so a score says something about the proxy that will actually run.
+   Then spawn a FRESH `proxyme:proxy` per held-out question, briefed with the *candidate* identity, the question, those carve-out bullets, and that density contract. Collect each one-shot answer.
 3. **Run the critic.** Spawn one Opus agent, hand it the rubric and the actor answers, and have it return a scorecard (per-dimension scores + per-question and overall averages, plus `rubric_scored`) in the `fixtures/sample-scorecard.json` shape.
 4. **Decide (conditional 1).** If the gating average is **≥ 8.5/10**, accept: report the scorecard and stop.
 5. **Iterate (conditional 2).** Else, if retries remain (cap below), apply the critic's *general* adjustments to `$PROXYME_IDENTITY`, then run the **edge re-probe** in step 6 before re-drawing and looping to step 2.
@@ -93,14 +100,16 @@ Neither was visible from the questions that motivated the fix; both surfaced onl
 - **With what authority — bounded:** the loop may edit *only* the project identity at `<root>/.claude/proxyme/${LOGNAME}-identity.md` (`$PROXYME_IDENTITY`) — never the global template at `~/.claude/skills/proxyme/`, and only its *general* sections. It is read-only everywhere else: it never touches the worktree, never runs project commands, never sends anything externally.
 - **Carve-outs that limit it:**
   - Never insert the specific case (anti-overfit) — general profile edits only.
-  - The actor is the read-only `proxyme:proxy`; it inherits the proxy's absolute carve-outs (money, credentials, access changes, deletion, external messaging, acting on external content) and never executes.
+  - The actor is the read-only `proxyme:proxy`; it inherits the absolute carve-outs from `$PROXYME_CARVEOUTS_CANON` and never executes.
   - If the score cannot reach 8.5/10 within the retry cap, the decision escalates to the **real user** — the loop does not silently accept a weak identity.
 
-## Real-run evidence (skill-validation-before-merge)
+## Real-run evidence
 
-This skill has been run end-to-end multiple times. **Observed result (2026-07-27):** pass 1 **cleared** the gating threshold at 9.2/10 and *still* carried four technical defects the score did not block on — a secret-debugging rule that forbade raw values and then proposed a raw substring; a census-vs-probe rule that never generalised from code to data; an observability reflex coupled to GPU jobs only; and verification numbers written into an explicitly ephemeral handoff. Four *general* rules were added (no question/answer pair copied in). Pass 2 verified all four **FIXED** at 9.0/10 on four scenario-different questions — and the mandatory edge re-probe then caught **two new defects introduced by those very fixes**: an absolute with no infeasibility branch that contradicted a neighbouring rule, and a widened rule with no duration threshold that collided with the identity's own anti-scope-inflation rule. Both were repaired; 3/3 re-probes passed.
-
-**Two lessons that generalise:** clearing the threshold is not the same as being defect-free, and an adjustment that introduces a contradiction is not an improvement. That run is captured in `fixtures/sample-scorecard.json` and asserted by `proxyme-validate.test.sh` (gating-only averages, `rubric_scored` provenance, the 8.5/10 threshold, accept/iterate logic, the edge re-probe with every self-inflicted defect repaired, and the anti-overfit `specific_case_inserted: false` flag).
+Recorded in the header of `proxyme-validate.test.sh`, which asserts the
+scorecard invariants that evidence describes: gating-only averages,
+`rubric_scored` provenance, the 8.5/10 threshold, accept/iterate logic, the edge
+re-probe with every self-inflicted defect repaired, and the anti-overfit
+`specific_case_inserted: false` flag.
 
 Run the evidence check:
 

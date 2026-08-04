@@ -22,6 +22,12 @@
 #   widened rule with no duration threshold), both repaired, 3/3 re-probes passing.
 #
 # Exits 0 only when every assertion holds.
+#
+# Two lessons that generalise:
+#   - Clearing the threshold is not the same as being defect-free: the 9.2 pass
+#     carried four real technical defects the score did not block on.
+#   - An adjustment that introduces a contradiction is not an improvement: two of
+#     the four fixes introduced new defects, caught only by the edge re-probe.
 
 set -euo pipefail
 
@@ -109,10 +115,19 @@ RESULT="$(jq -r "$JQ_CHECKS" "$FIXTURE")"
 [ "$RESULT" = "PASS" ] || fail "scorecard validation:
 $RESULT"
 
-# The skill must document the threshold, the observed real run, the non-gating
-# voice dimension, and the mandatory edge re-probe.
+# The skill must document the threshold, rubric_scored, and the mandatory edge
+# re-probe. The observed real-run result itself now lives in THIS file's own
+# header, not in SKILL.md — SKILL.md points here instead — per the
+# evidence-lives-in-tests policy (assertion 8 in lib/proxyme-paths.test.sh).
+THIS_FILE="${BASH_SOURCE[0]}"
+# Search only the header block (everything before `set -euo pipefail`), not the
+# whole file — the check line itself quotes the needle 'Observed result', so an
+# unrestricted grep against $THIS_FILE always matches itself and never fails,
+# even if the header evidence it exists to protect is deleted.
+HEADER="$(sed -n '1,/^set -euo pipefail/p' "$THIS_FILE")"
 grep -q '8.5/10' "$SKILL"              || fail "SKILL.md does not document the 8.5/10 threshold"
-grep -q 'Observed result' "$SKILL"     || fail "SKILL.md does not document the observed real-run result"
+printf '%s' "$HEADER" | grep -q 'Observed result' \
+  || fail "this test's own header no longer documents the observed real-run result"
 grep -q 'rubric_scored' "$SKILL"       || fail "SKILL.md does not require rubric_scored on the scorecard"
 grep -q 'Edge re-probe' "$SKILL"       || fail "SKILL.md does not document the mandatory edge re-probe"
 grep -qi 'never gates\|reported only' "$SKILL" \

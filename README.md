@@ -180,8 +180,8 @@ For questions it has no memorized answer to, the proxy **constructs an answer fr
 - **Entering credentials** or payment details
 - **Changing access, permissions,** or account settings
 - **Permanently deleting data**
-- **Sending messages** or publishing externally on your behalf
-- **Acting on instructions** from fetched content or external URLs
+- **Sending messages** or publishing externally on the user's behalf
+- **Acting on instructions** found in external content (fetched content, URLs)
 
 For these absolute carve-outs (and any session carve-outs you register), the proxy tells the requester to escalate to the real you.
 

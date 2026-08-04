@@ -23,6 +23,8 @@ That defines `PROXYME_DIR` and `PROXYME_CONFIG`, assumed in scope by every snipp
 
 Print the blocks below and nothing else — no preamble, no explanation of what the config does, no closing summary, no offer of further help. If a write fails, say so and quote the error verbatim. Ask the picker questions in the language the user is writing in.
 
+One addition to "nothing else": when `$PROXYME_VERSION_NOTE` is non-empty, print it as the first line and carry on. It means this skill is running from a cached version older than the newest installed one, so the config path it reads and writes comes from that older copy. Empty note, print nothing.
+
 ## Syntax
 
 ```

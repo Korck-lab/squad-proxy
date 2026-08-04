@@ -59,6 +59,24 @@ The mechanical values — the template heading, the guard's `sed` anchor, and th
 fixture at `skills/proxyme-identity/fixtures/stale-flags.md` — are frozen by the
 same assertion. Rationale is recorded in `docs/adr/0005-the-operational-rules-section-number-is.md`.
 
+### The running version is stated, never assumed
+
+A marketplace install lives at `<cache>/proxyme/<version>/` and the cache keeps
+several versions at once, so a skill can launch from an older one while a newer
+is installed. Every path is derived from the running copy's own location, so that
+older copy's `lib/` is what actually executes. `proxyme-paths.sh` exports
+`PROXYME_VERSION`, `PROXYME_VERSION_LATEST` and `PROXYME_VERSION_NOTE`; every
+skill prints the note as its first line when it is non-empty and prints nothing
+when it is empty. Running an older version deliberately is fine — not knowing
+which one ran is not.
+
+### Per-project state written by the skills
+
+`PROXYME_DIR` holds everything a run writes for a project: the identity, the
+config, the project carve-outs, and `PROXYME_SCORECARDS` for `/proxyme-validate`.
+All of it is user data, excluded from git, and never committed or copied into the
+global template directory.
+
 ## Work Guidance
 
 - Change a canonical `lib/` fragment in one place; skills interpolate it. A

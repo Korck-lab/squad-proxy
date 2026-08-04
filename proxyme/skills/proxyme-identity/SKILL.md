@@ -24,6 +24,8 @@ Run this whenever you want to refresh your proxy identity. You don't need to run
 
 Two audiences, one rule: maximum density, cut words but never findings.
 
+**Version skew, first line, only when it exists.** When `$PROXYME_VERSION_NOTE` is non-empty, print it before the report and carry on. It means this skill is running from a cached version older than the newest installed one, so `lib/smart-clip.sh` and the path module come from that older copy — which the user must know when reading a profile built by it. Empty note, print nothing.
+
 **To the user (this skill's own output).** Lead with the result — file written, counts, projects found. No preamble, no narration of which agent you spawned, no closing summary, no offer of further help. Anything dropped as stale (step 3) is named explicitly; silence there reads as "nothing changed" when something did. Answer in the language the user is writing in.
 
 **To the collector and synthesis agents.** Append the contents of `$PROXYME_TERSE_CONTRACT` verbatim to every agent prompt in steps 1 and 2, followed by this delta:

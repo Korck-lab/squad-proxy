@@ -17,6 +17,8 @@ The proxy is **ephemeral and purely reactive**. There is no persistent agent, no
 
 Everything this skill prints is operational status, not prose. Answer at maximum density.
 
+**Version skew, first line, only when it exists.** `$PROXYME_VERSION_NOTE` is empty unless this skill is running from a cached version older than the newest installed one. When it is non-empty, print it before anything else and carry on — the run is valid, but every path it resolves comes from that older copy, so the user has to know which version answered them. When it is empty, print nothing: the check costs nothing on the happy path.
+
 - Lead with the outcome. No preamble, no restating what was asked, no narrating the bash steps — their output is already on screen.
 - **Relay the proxy's answer verbatim.** Do not summarise it, re-word it, wrap it in your own framing, or append your reading of it. It is the user's decision; a paraphrase is a different decision and the user cannot tell from your output which one they got. If you disagree with it, say so in one line *after* the verbatim answer.
 - No closing summary that repeats the body, and no offer of further help.

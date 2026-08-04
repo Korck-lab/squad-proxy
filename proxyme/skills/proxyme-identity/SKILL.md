@@ -228,7 +228,11 @@ comm -23 /tmp/proxyme-identity-flags.$$ /tmp/proxyme-skill-flags.$$
 rm -f /tmp/proxyme-identity-flags.$$ /tmp/proxyme-skill-flags.$$
 ```
 
-Whatever that `comm` prints is a flag the identity mentions and `/proxyme` no longer documents: do not carry it forward, and name it in the step-4 report under `Dropped as stale:`. An empty output means nothing is stale — which, before the path was resolved through `$PROXYME_SKILLS`, was what this check printed unconditionally.
+Whatever that `comm` prints is a flag the identity mentions and `/proxyme` no longer documents: do not carry it forward, and name it in the step-4 report under `Dropped as stale:`.
+
+An empty output means nothing is stale.
+
+Before the path resolved through `$PROXYME_SKILLS`, the second `grep` read a file that did not exist and produced an empty list, so every flag the identity mentioned looked absent from the skill — including current ones like `--off`. The broken check over-reported, it did not go silent.
 
 **Save:** `mkdir -p "$PROXYME_DIR"`, then write the synthesis agent's output to `$PROXYME_IDENTITY`.
 

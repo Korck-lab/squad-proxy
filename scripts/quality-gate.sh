@@ -67,10 +67,13 @@ run_check "shell syntax (bash -n over every tracked .sh)" bash -c '
 run_check "version triple agrees (VERSION, plugin.json, marketplace.json)" \
   ./scripts/verify-version-bump.sh --state-only
 
-# Advisory, never gating. The en-US rule has three exceptions — verbatim quotes,
-# product output, third-party identifiers — so a hard ban on accented characters
-# would fail a correctly quoted user sentence. Reported so it is seen, not
-# enforced so it is wrong.
+# Advisory, never gating. Since ADR-0007 the en-US rule has two exceptions —
+# quoted user text, which is translated and tagged but keeps its original in the
+# historical records already in the tree, and third-party identifiers — so a hard
+# ban on accented characters would fail a correctly preserved quote in an old ADR
+# or test header. Reported so it is seen, not enforced so it is wrong. The
+# enforcing check is assertion 12 of proxyme/lib/proxyme-paths.test.sh, which
+# gates on the rule's presence in the five shipped files that set it.
 ACCENTED="$(for f in $(git ls-files); do LC_ALL=C grep -lqE 'ç|ã|õ|é|ê|á|â|í|ó|ô|ú' "$f" 2>/dev/null && echo "$f"; done)"
 if [ -n "$ACCENTED" ]; then
   echo "  NOTE non-ASCII Latin text in tracked files — check against docs/guardrails/english-us-normalization.md:"
@@ -98,6 +101,12 @@ run_check "version verifier catches an unbumped commit" \
   ./scripts/verify-version-bump.test.sh
 run_check "pre-push guard blocks an unGated commit" \
   ./scripts/prepush-guard.test.sh
+# No recursion: every arm injects PROXYME_GATE_CMD, so open-pr.sh never runs the
+# real gate from inside the gate.
+run_check "open-pr refuses a red gate, a dirty tree and an empty pull request" \
+  ./scripts/open-pr.test.sh
+run_check "merge-pr refuses a red gate, a stale head sha and an unclean pull request" \
+  ./scripts/merge-pr.test.sh
 
 # --- Verdict ------------------------------------------------------------------
 VERSION="$(tr -d '[:space:]' < proxyme/VERSION)"

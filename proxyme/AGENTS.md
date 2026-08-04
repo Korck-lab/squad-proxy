@@ -21,13 +21,31 @@ user's machine, so it is a product surface, not working material.
 
 ## Local Contracts
 
-### Everything tracked here is written in en-US
+### Everything here is written in en-US, and everything it produces is too
 
-Skills, agents, `lib/` fragments, comments and the strings a test prints. The
-three exceptions — verbatim quotes, product output that follows the user's
-language, third-party identifiers — are in
+Skills, agents, `lib/` fragments, comments and the strings a test prints — and,
+since ADR-0007, the product's own output: the generated identity file, the
+proxy's answer, and every status block a skill prints. The consumer is an agent
+running in English and it executes the proxy's answer verbatim, so following the
+installer's language would put a translation step between the decision and the
+action. The two remaining exceptions — quoted user text, which is translated to
+en-US and tagged with its source language, and third-party identifiers, which
+are never translated — are in
 `docs/guardrails/english-us-normalization.md`. The identity template's Section 7
 is shipped text and is copied into generated files verbatim, untranslated.
+
+The rule is **set** in five shipped files: `lib/terse-contract.md`, which every
+agent prompt interpolates, plus the four skills that also print status blocks of
+their own directly to the user (`proxyme`, `proxyme-identity`, `proxyme-model`,
+`proxyme-validate`). One identical sentence in all five; what each file adds
+after that sentence is file-specific. Assertion 12 of
+`lib/proxyme-paths.test.sh` fails the build if the shared sentence drifts or if a
+superseded follow-the-user clause reappears beside it.
+
+This file **describes** the rule and is deliberately not in that covered set — it
+is contributor documentation, never interpolated into a prompt. A file joins the
+covered set when it tells a model what language to answer in, not when it
+explains the policy.
 
 ### Section 7, the operational-rules section, is a frozen number
 

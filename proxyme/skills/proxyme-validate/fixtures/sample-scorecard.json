@@ -8,6 +8,8 @@
     "critic": "opus",
     "retry_cap": 3,
     "iterations_used": 2,
+    "answer_language": "en-US",
+    "answer_language_note": "The language the scored answers were written in. Every proxyme artifact and utterance is en-US (ADR-0007), and this run's held-out questions are recorded in en-US above. Kept as an explicit field because a voice_fidelity score taken when answers followed the user's language and one taken after the flip measure different things, and no other field would reveal that to a later reader. This particular run did not score voice_fidelity at all (see rubric_scored), so no cross-run voice comparison rests on it.",
     "note": "Held-out behavioural questions only — analogous to, but never copied from, the clips used to build the identity. No specific case is fed back into the file. Questions are paraphrased generically here: no personal paths, client names, or credentials."
   },
   "rubric": {

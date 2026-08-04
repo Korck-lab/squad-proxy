@@ -26,11 +26,11 @@ Two audiences, one rule: maximum density, cut words but never findings.
 
 **Version skew, first line, only when it exists.** When `$PROXYME_VERSION_NOTE` is non-empty, print it before the report and carry on. It means this skill is running from a cached version older than the newest installed one, so `lib/smart-clip.sh` and the path module come from that older copy — which the user must know when reading a profile built by it. Empty note, print nothing.
 
-**To the user (this skill's own output).** Lead with the result — file written, counts, projects found. No preamble, no narration of which agent you spawned, no closing summary, no offer of further help. Anything dropped as stale (step 3) is named explicitly; silence there reads as "nothing changed" when something did. Answer in the language the user is writing in.
+**To the user (this skill's own output).** Lead with the result — file written, counts, projects found. No preamble, no narration of which agent you spawned, no closing summary, no offer of further help. Anything dropped as stale (step 3) is named explicitly; silence there reads as "nothing changed" when something did. Answer in en-US, whatever language the user writes in.
 
 **To the collector and synthesis agents.** Append the contents of `$PROXYME_TERSE_CONTRACT` verbatim to every agent prompt in steps 1 and 2, followed by this delta:
 
-> **Your delta:** respect the word cap stated in your own prompt — if a pattern is about to go over it, keep the pattern and cut the prose around it. Quote the user's own words verbatim when you quote at all; never paraphrase inside quotation marks.
+> **Your delta:** respect the word cap stated in your own prompt — if a pattern is about to go over it, keep the pattern and cut the prose around it. Quoted user text is translated to en-US and tagged with the language it was said in — `"…" [translated from pt-BR]`. Translating is not license to paraphrase: keep every negation, condition and hedge the original carried, and never soften a blunt sentence into a polite one. A quote whose source is already English carries no tag. The tag names the language of **that quote**, taken from the clip or memory file it came from — never the session's or the file's dominant language. People switch language turn by turn, so a tag inferred from the surrounding context is a guess, and a guessed tag is worse than none: it is a claim about provenance.
 
 Read it with:
 ```bash
@@ -152,14 +152,19 @@ eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"; echo "$PROXYME_SMART_CLIP"
 >    `proxyme-identity.test.sh` asserts it, against a synthetic fixture.
 >
 > 5. Label each clip as one of: request / correction-rejection / confirmation / answer,
->    and keep only the most informative ~40 clips across the 5 sessions.
+>    **and record the language that clip was written in**, per clip. A session mixes
+>    languages turn by turn, so a single dominant-language answer cannot tag a quote
+>    accurately downstream. Keep only the most informative ~40 clips across the 5
+>    sessions.
 >
 > Then consolidate the patterns below in <=600 words (consolidated patterns, not transcriptions):
 >
 > 1. How they formulate requests: style, level of detail, use of slash commands
 > 2. What they reject mid-task: direct quotes of when they asked to stop, change, or simplify
 > 3. How much autonomy they give: let you decide or ask for options?
-> 4. Tone and language: PT-BR? English? Mixed?
+> 4. Tone and register, and which language they actually type in — name it, because
+>    it tells the proxy what a blunt sentence from them looks like. Your own output
+>    stays en-US whatever you find, with every quote translated and tagged.
 > 5. Process patterns: prefer research first? Quick iteration? Parallel agents?
 
 ### 2. Synthesize identity
@@ -173,14 +178,22 @@ You will receive 4 analysis outputs. Combine them to write the complete file in 
 
 RULES:
 - Sections with [auto] should be generated from the outputs
-- Write the [auto] sections in the user's own language — that is where the profile
-  is read from, and a translated preference loses the phrasing that carries it
-- Section 7 is shipped template text: copy it VERBATIM in en-US, do not modify and
-  do not translate it, even when the [auto] sections above it are in another
-  language. Translation is where a clause silently loses a condition, and Section 7
+- Write the WHOLE file in en-US, whatever language the user writes in, and copy each
+  section heading from this template exactly — same number, same words, never
+  translated. `[auto]` is an authoring marker telling you to generate that section;
+  strip it from the heading you write. The file is read by an agent running in
+  English, and the answer built from it is executed verbatim (ADR-0007).
+- Quoted user text is translated to en-US and tagged with the language it was said
+  in — `"…" [translated from pt-BR]`. The tag is what stops a translation from
+  being read as the user's exact words. Translating is not license to paraphrase:
+  every negation, condition and hedge the original carried survives, and a blunt
+  sentence stays blunt. A quote whose source is already English carries no tag.
+- Section 7 is shipped template text: copy it VERBATIM in en-US, do not modify, do
+  not translate and do not reword it. Translation is where a clause silently loses a condition, and Section 7
   is the section the proxy's authority is read from (see
   `docs/guardrails/english-us-normalization.md`). A user-authored carve-out block
-  appended to it is the user's own words and keeps their language.
+  appended to it is the user's own words: it is translated and tagged like any other
+  captured user text, content-complete, never summarized.
 - Be concrete and specific — avoid generalizations
 - Use examples from outputs when relevant
 - When the outputs disagree on a fact about the user (a figure, a credential, a
@@ -238,7 +251,7 @@ eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"; test -f "$PROXYME_IDENTITY"
 
 **If EXISTS:** Read the current Section 7 and split it into two kinds of content — they are handled differently:
 
-- **User-authored carve-outs** (extra escalation rules, exceptions, project-specific limits the user wrote themselves): **preserve verbatim**, appended into the new Section 7.
+- **User-authored carve-outs** (extra escalation rules, exceptions, project-specific limits the user wrote themselves): **preserve content-complete**, appended into the new Section 7. Preserving means every rule, condition and exception survives — not that the bytes do. A carve-out written in another language is translated to en-US and tagged, the same as any other captured user text; nothing in it is summarized away on the trip.
 - **Template structure** (the read-only/ephemeral paragraph, can-decide list, always-escalate list, the `--except` line): **always take from the current template above**, even if the existing file differs.
 
 "Different from the default template" does **not** imply the user edited it — it usually means the file was generated by an **older version of this skill**. Preserving that wholesale re-introduces stale behaviour: a real refresh found a Section 7 still documenting a `--nonew` flag that had been removed from `/proxyme`, so blind preservation would have shipped a briefing describing a mode that no longer exists.
@@ -252,13 +265,27 @@ comm -23 \
   <(grep -oE '\-\-[a-z-]+' "$PROXYME_SKILLS/proxyme/SKILL.md" | sort -u)
 ```
 
-The `sed` scopes the identity side to Section 7 — the only section this step preserves. Unscoped, the grep also matches flags the user quoted elsewhere in their own profile, and the step below would then drop a carve-out it was told to preserve verbatim. The `/proxyme` side stays unscoped: the full flag vocabulary is spread across that whole skill.
+The `sed` scopes the identity side to Section 7 — the only section this step preserves. Unscoped, the grep also matches flags the user quoted elsewhere in their own profile, and the step below would then drop a carve-out it was told to keep. The `/proxyme` side stays unscoped: the full flag vocabulary is spread across that whole skill.
 
 Whatever that `comm` prints is a flag the identity mentions and `/proxyme` no longer documents: do not carry it forward, and name it in the step-4 report under `Dropped as stale:`.
 
 An empty output means nothing is stale.
 
 Before the path resolved through `$PROXYME_SKILLS`, the second `grep` read a file that did not exist and produced an empty list, so every flag the identity mentioned looked absent from the skill — including current ones like `--off`. The broken check over-reported, it did not go silent.
+
+**Language check before saving.** Identity files written before ADR-0007 carry headings translated into the installer's language rather than the template's `## 1. Who you are`. A refresh **converts such a file in place**: the whole file is rewritten in en-US, including the user-authored carve-outs, and nothing is appended to a half-translated file. The headings are the cheap signal, because they are the one part of the file the template fixes:
+
+```bash
+eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"
+headings() { grep -oE '^## [0-9]+\. .*' "$1" | sed 's/ \[auto\]$//'; }
+diff <(headings "$PROXYME_IDENTITY") \
+     <(headings "$PROXYME_SKILLS/proxyme-identity/SKILL.md") >/dev/null \
+  && echo "ALREADY_EN_US" || echo "CONVERTED"
+```
+
+The expected list is read out of the template in this very file rather than restated here, so the check cannot drift from the template it is checking, and this skill keeps exactly one literal copy of each heading. The `sed` strips the `[auto]` authoring marker, which the template carries and a written identity never does.
+
+That one comparison decides both things: `CONVERTED` means this run changed the file's language, and the same `CONVERTED` is what adds the conversion line to the step-4 report — one condition, not two. A heading list that differs for any other reason — a renamed section, a missing one — is also a mismatch, and reporting the conversion when nothing needed converting is the harmless direction. Silence is not: a converted file is a rewritten file, and a report that does not say so reads exactly like a refresh that changed a few bullets.
 
 **Save:** `mkdir -p "$PROXYME_DIR"`, then write the synthesis agent's output to `$PROXYME_IDENTITY`.
 
@@ -271,6 +298,7 @@ Identity written: <path to $PROXYME_IDENTITY>
 Memories: <n> feedback, <n> user, <n> project · Sessions: <n>
 Active projects: <comma-separated list>
 Dropped as stale: <flag/mode names, or omit this line entirely if none>
+Converted to en-US: <what the previous file was written in, and that the carve-outs were translated and tagged — or omit this line entirely if the file was already en-US>
 Conflicting facts: <one per fact: what disagrees, both values, which source won and why — or omit this line entirely if none>
 Next: /proxyme-validate, then /proxyme
 ```
@@ -279,6 +307,6 @@ Next: /proxyme-validate, then /proxyme
 report swallows reads as a clean run, and the identity then carries a number the
 proxy will assert with the user's authority.
 
-**Next:** run `/proxyme-validate` to score the new identity against held-out questions before relying on it.
+**Next:** run `/proxyme-validate` to score the new identity against held-out questions before relying on it. When the report carried the conversion line, that run is not optional: a conversion rewrote every heuristic in the file, and a heuristic quietly weakened in translation shows up in the scorecard and nowhere else.
 
 **Note:** The generated identity file is a personal profile and must never be committed. `/proxyme` adds `.claude/proxyme/` to `.git/info/exclude` when it seeds a project; if you ran this skill directly in a repo where that has not happened, add it yourself before committing anything.

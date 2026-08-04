@@ -1,7 +1,7 @@
 ---
 name: no-overthink-automation
-description: Skills e specs com mais de 5 condicionais são sobre-engenharia — simplificar até ser executável em uma sessão.
+description: Skills and specs carrying more than 5 conditionals are over-engineered — simplify until one session can execute them.
 ---
 
 ## Rule
-Qualquer skill, spec ou plano de automação Claude Code que contenha mais de 5 condicionais distintos (if/else, casos especiais, fallbacks em cadeia) deve ser refatorado antes de ser considerado pronto. O critério é: um agente novo consegue executar do início ao fim em uma única sessão sem ambiguidade? Se não, está complexo demais. Remover camadas até que a resposta seja sim.
+Any Claude Code skill, spec or automation plan holding more than 5 distinct conditionals (if/else, special cases, chained fallbacks) is refactored before it counts as ready. The test: can a fresh agent execute it start to finish in a single session with no ambiguity? If not, it is too complex. Remove layers until the answer is yes.

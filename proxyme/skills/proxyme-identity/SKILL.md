@@ -171,10 +171,20 @@ You will receive 4 analysis outputs. Combine them to write the complete file in 
 
 RULES:
 - Sections with [auto] should be generated from the outputs
-- Section 7 should be copied VERBATIM from the template below — do not modify
+- Write the [auto] sections in the user's own language — that is where the profile
+  is read from, and a translated preference loses the phrasing that carries it
+- Section 7 is shipped template text: copy it VERBATIM in en-US, do not modify and
+  do not translate it, even when the [auto] sections above it are in another
+  language. Translation is where a clause silently loses a condition, and Section 7
+  is the section the proxy's authority is read from (see
+  `docs/guardrails/english-us-normalization.md`). A user-authored carve-out block
+  appended to it is the user's own words and keeps their language.
 - Be concrete and specific — avoid generalizations
 - Use examples from outputs when relevant
-- Use the user's preferred language in all content
+- When the outputs disagree on a fact about the user (a figure, a credential, a
+  current number), never pick one silently: state that it is disputed, name both
+  values and their sources, and let the proxy ask rather than assert. Prefer the
+  newer source when one is clearly newer, and say so.
 - Return ONLY the file content, without explanations
 
 TEMPLATE:
@@ -259,8 +269,13 @@ Identity written: <path to $PROXYME_IDENTITY>
 Memories: <n> feedback, <n> user, <n> project · Sessions: <n>
 Active projects: <comma-separated list>
 Dropped as stale: <flag/mode names, or omit this line entirely if none>
+Conflicting facts: <one per fact: what disagrees, both values, which source won and why — or omit this line entirely if none>
 Next: /proxyme-validate, then /proxyme
 ```
+
+`Conflicting facts` is not optional when the collectors disagreed. A conflict the
+report swallows reads as a clean run, and the identity then carries a number the
+proxy will assert with the user's authority.
 
 **Next:** run `/proxyme-validate` to score the new identity against held-out questions before relying on it.
 

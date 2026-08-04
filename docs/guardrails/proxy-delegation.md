@@ -1,7 +1,7 @@
 ---
 name: proxy-delegation
-description: Toda decisão autônoma do proxy deve ser rastreável — contexto, autoridade e responsável documentados.
+description: Every autonomous proxy decision is traceable — context, authority and decider documented.
 ---
 
 ## Rule
-Skills proxyme devem documentar explicitamente "quem decide" e "com que autoridade". Qualquer bloco de delegação autônoma deve identificar: (1) o agente que decide, (2) o contexto em que a decisão é válida, (3) os carve-outs que a limitam. Código ou spec que implemente delegação sem esses três elementos está incompleto.
+proxyme skills document explicitly "who decides" and "with what authority". Any autonomous delegation block identifies (1) the agent that decides, (2) the context in which the decision holds, and (3) the carve-outs that bound it. Code or a spec implementing delegation without those three elements is incomplete.

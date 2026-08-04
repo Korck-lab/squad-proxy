@@ -21,6 +21,14 @@ user's machine, so it is a product surface, not working material.
 
 ## Local Contracts
 
+### Everything tracked here is written in en-US
+
+Skills, agents, `lib/` fragments, comments and the strings a test prints. The
+three exceptions — verbatim quotes, product output that follows the user's
+language, third-party identifiers — are in
+`docs/guardrails/english-us-normalization.md`. The identity template's Section 7
+is shipped text and is copied into generated files verbatim, untranslated.
+
 ### Section 7, the operational-rules section, is a frozen number
 
 `## 7. Proxy operational rules` is not a source-internal constant. The number is

@@ -38,63 +38,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURE="$SCRIPT_DIR/fixtures/sample-session.jsonl"
-BEFORE=2   # default assistant turns kept before each real user turn
-AFTER=2    # default assistant turns kept after each real user turn
+# The SMART-CLIP logic lives in the shipped module; this test exercises that
+# module, not a copy of it. Resolve it the way the skills do.
+eval "$(bash "$SCRIPT_DIR/../../lib/proxyme-paths.sh")"
+[ -x "$PROXYME_SMART_CLIP" ] || { echo "FAIL: smart-clip not executable: $PROXYME_SMART_CLIP" >&2; exit 1; }
 
-# --- SMART-CLIP helper (mirrors the Agent D method in SKILL.md) ----------------
-# Pass 1: classify every line by offset WITHOUT loading content into the agent.
-#   A = assistant turn, U = real user turn, O = other (command / system-reminder /
-#   tool_result / meta). Real user turn = type==user, string content, no markers.
-classify() {
-  jq -rc '"\(input_line_number) \(
-    if .type=="assistant" then "A"
-    elif (.type=="user" and (.message.content|type=="string")
-          and ((.message.content)|test("<command-name>|<system-reminder>|<local-command|<task-notification>|<agent-message|<bash-input|Another Claude session sent a message|## Context Usage|^\\[Image:|^\\[Request interrupted|session is being continued|Caveat: The messages below were generated")|not)) then "U"
-    else "O" end)"' "$1"
-}
-
-# Pull the readable text of a single line by its offset (one sed -n, never the file).
-text_of() {
-  sed -n "${1}p" "$FIXTURE" | jq -rc 'if (.message.content|type)=="string"
-    then (.message.content|gsub("\n";" "))
-    else (.message.content|map(.text//"")|join(" ")|gsub("\n";" ")) end'
-}
-
-# Walk outward from a user turn collecting up to $max assistant lines, skipping
-# other lines and stopping at the next real user turn. Returns a space-separated list.
-collect() {
-  local n=$1 step=$2 max=$3 c=0 out=""
-  while [ "$n" -ge 1 ] && [ "$n" -le "$TOTAL" ] && [ "$c" -lt "$max" ]; do
-    case "${CLASS[$n]:-O}" in
-      U) break ;;
-      A) out="$out $n"; c=$((c+1)) ;;
-    esac
-    n=$((n+step))
-  done
-  echo "$out"
-}
-
-# Emit one windowed Q/A-context record (compact JSON) for a real user turn.
-emit_record() {
-  local uline=$1 blist=$2 alist=$3 wl bt at
-  wl=$( { echo "$uline"; printf '%s\n' $blist $alist; } | grep -E '^[0-9]+$' | sort -n | jq -nc '[inputs]' )
-  bt=$( for x in $(printf '%s\n' $blist | grep -E '^[0-9]+$' | sort -n); do text_of "$x"; done | jq -Rnc '[inputs]' )
-  at=$( for x in $alist; do text_of "$x"; done | jq -Rnc '[inputs]' )
-  jq -nc --argjson ul "$uline" --argjson wl "$wl" --argjson b "$bt" \
-         --arg u "$(text_of "$uline")" --argjson a "$at" \
-    '{user_line:$ul, window_lines:$wl, before:$b, user:$u, after:$a}'
-}
-
-smart_clip() {
-  local cls; cls=$(classify "$FIXTURE")
-  CLASS=(); TOTAL=0
-  while read -r ln cl; do CLASS[$ln]=$cl; TOTAL=$ln; done <<< "$cls"
-  local n
-  for n in $(seq 1 "$TOTAL"); do
-    [ "${CLASS[$n]:-O}" = "U" ] || continue
-    emit_record "$n" "$(collect $((n-1)) -1 "$BEFORE")" "$(collect $((n+1)) 1 "$AFTER")"
-  done
-}
+smart_clip() { "$PROXYME_SMART_CLIP" "$FIXTURE"; }
 
 # --- run + assert --------------------------------------------------------------
 RECORDS="$(smart_clip)"

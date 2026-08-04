@@ -110,38 +110,30 @@ find ~/.claude/projects -name "*.jsonl" \
   | xargs wc -l 2>/dev/null | sort -rn | head -6 | grep -v total
 ```
 
-2. For each session, map every line to its offset and class with jq — A = assistant,
-   U = real user turn, O = other. A real user turn is `type=="user"` with string
-   content and none of the harness-injected markers: `<command-name>`,
-   `<system-reminder>`, `<local-command>`, `<task-notification>`, a leading
-   `[Image:` or `[Request interrupted`, a compaction summary (`session is being
-   continued`), or a slash-command `Caveat:` echo. (These last markers are NOT
-   human turns — skipping them keeps ~20-50% of harness noise out of the profile.)
-
-   **Agent-authored turns are the bigger trap.** Text written by *another agent* also
-   arrives on `type=="user"` lines: `<agent-message`, `Another Claude session sent a
-   message`, `## Context Usage` output, and `<bash-input` echoes. On a session that
-   uses `/proxyme` heavily these can be the **majority** of what survives the filter —
-   measured at **58% on a real 8.9k-line session** (231 lines passed the old filter;
-   only 98 were human). Sampling them feeds the proxy's own prose back in as if the
-   user had written it, so the profile converges on the proxy's voice instead of the
-   user's. Exclude them or the identity is self-referential.
+2. For each session, run the shipped SMART-CLIP module. It emits one compact
+   JSON record per real human turn — `{user_line, window_lines, before, user,
+   after}` — pulling only a bounded window by line index. Never load a whole
+   `.jsonl` into context; the module never does either.
 
 ```bash
-jq -rc '"\(input_line_number) \(
-  if .type=="assistant" then "A"
-  elif (.type=="user" and (.message.content|type=="string")
-        and ((.message.content)|test("<command-name>|<system-reminder>|<local-command|<task-notification>|<agent-message|<bash-input|Another Claude session sent a message|## Context Usage|^\\[Image:|^\\[Request interrupted|session is being continued|Caveat: The messages below were generated")|not)) then "U"
-  else "O" end)"' "$SESSION"
+eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"
+"$PROXYME_SMART_CLIP" "$SESSION"
 ```
 
-3. For each real user turn, pull a bounded window by line index — default up to 2
-   assistant turns BEFORE and 2 AFTER, stopping at the next real user turn — and read
-   only those offsets with `sed -n "<line>p"`. The assistant turn(s) before the user
-   turn are the model question of the **Q/A pair**; the turn(s) after are the answer
-   and the **model confirmation-of-understanding** (where the model restates what it
-   will do). The runnable helper that performs this exact line-offset window pull is
-   `proxyme-identity.test.sh` in this folder — run it to see the windowed Q/A records.
+   `before` holds the model question of the Q/A pair; `after` holds the answer
+   and the model's confirmation-of-understanding, where it restates what it will
+   do.
+
+3. **Why the filter is strict, and why you must not weaken it.** Two classes of
+   `type=="user"` line are not human turns. Harness-injected noise (command
+   echoes, system reminders, task notifications, image metadata, compaction
+   summaries, slash-command caveats) is 20-50% of them. Agent-authored text
+   (`<agent-message>`, cross-session messages, context-usage dumps,
+   `<bash-input>` echoes) is the bigger trap: measured on a real 8.9k-line
+   session, 231 lines passed the pre-2026-07-27 filter and only 98 were human —
+   58% was the proxy's own prose being recycled as if the user had written it,
+   which makes the generated identity self-referential. The module excludes both.
+   `proxyme-identity.test.sh` asserts it, against a synthetic fixture.
 
 4. Label each clip as one of: request / correction-rejection / confirmation / answer,
    and keep only the most informative ~40 clips across the 5 sessions.

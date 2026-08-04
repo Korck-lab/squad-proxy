@@ -120,6 +120,10 @@ else
   fail "canonical terse-contract file missing: $PROXYME_TERSE_CONTRACT"
 fi
 
+# --- smart-clip is present and executable ------------------------------------
+[ -x "$PROXYME_SMART_CLIP" ] && pass "PROXYME_SMART_CLIP is executable" \
+  || fail "PROXYME_SMART_CLIP is not executable: $PROXYME_SMART_CLIP"
+
 if [ "$FAILS" -ne 0 ]; then
   echo "RESULT: $FAILS assertion(s) failed" >&2
   exit 1

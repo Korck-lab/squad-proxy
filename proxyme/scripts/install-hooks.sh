@@ -1,35 +1,47 @@
 #!/bin/bash
-# Install a git pre-commit hook that auto-bumps the proxyme version
-# when any proxyme/ files are staged.
-# Safe to run multiple times — skips if the hook call already exists.
+# Install this repository's two git hooks:
+#
+#   pre-commit  auto-bump the proxyme version when any proxyme/ file is staged
+#   pre-push    refuse to push a commit scripts/quality-gate.sh has not passed
+#
+# Both live in .git/hooks/, which git does not track, so a fresh clone has
+# neither until this runs — that is exactly why scripts/verify-version-bump.sh
+# checks the bump in history rather than trusting the hook to exist.
+#
+# Safe to run repeatedly — each hook is skipped if its marker is already there.
+# Pass a hook name to install only that one.
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-HOOK_NAME="${1:-pre-commit}"
-HOOK_FILE="${REPO_ROOT}/.git/hooks/${HOOK_NAME}"
-MARKER="# proxyme-auto-version-bump"
+ONLY="${1:-}"
 
-if [ -f "$HOOK_FILE" ] && grep -qF "$MARKER" "$HOOK_FILE"; then
-  echo "Hook already installed in ${HOOK_FILE}"
-  exit 0
-fi
+install_hook() {
+  local name="$1" marker="$2" body="$3"
+  local file="${REPO_ROOT}/.git/hooks/${name}"
 
-if [ ! -f "$HOOK_FILE" ]; then
-  cat > "$HOOK_FILE" <<'HOOK'
-#!/bin/bash
-REPO_ROOT="$(git rev-parse --show-toplevel)"
+  if [ -n "$ONLY" ] && [ "$ONLY" != "$name" ]; then
+    return 0
+  fi
+  if [ -f "$file" ] && grep -qF "$marker" "$file"; then
+    echo "Hook already installed in ${file}"
+    return 0
+  fi
+  if [ ! -f "$file" ]; then
+    printf '#!/bin/bash\n%s\n' "$body" > "$file"
+  else
+    cp "$file" "${file}.bak"
+    printf '\n%s\n' "$body" >> "$file"
+  fi
+  chmod +x "$file"
+  echo "Installed ${name} hook at ${file}"
+}
+
+install_hook pre-commit '# proxyme-auto-version-bump' \
+'REPO_ROOT="$(git rev-parse --show-toplevel)"
 # proxyme-auto-version-bump
-exec "$REPO_ROOT/proxyme/scripts/bump-version.sh"
-HOOK
-else
-  cp "$HOOK_FILE" "${HOOK_FILE}.bak"
-  cat >> "$HOOK_FILE" <<'HOOK'
+"$REPO_ROOT/proxyme/scripts/bump-version.sh"'
 
-# proxyme-auto-version-bump
-REPO_ROOT="$(git rev-parse --show-toplevel)"
-"$REPO_ROOT/proxyme/scripts/bump-version.sh"
-HOOK
-fi
-
-chmod +x "$HOOK_FILE"
-echo "Installed ${HOOK_NAME} hook at ${HOOK_FILE}"
+install_hook pre-push '# proxyme-gate-receipt-guard' \
+'REPO_ROOT="$(git rev-parse --show-toplevel)"
+# proxyme-gate-receipt-guard
+"$REPO_ROOT/scripts/prepush-guard.sh"'

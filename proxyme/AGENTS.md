@@ -87,7 +87,21 @@ global template directory.
 
 ## Verification
 
-Run from anywhere; each script resolves its own paths.
+**One command after any change under `proxyme/`:**
+
+```bash
+scripts/quality-gate.sh            # every check below, cheapest first
+scripts/quality-gate.sh --land     # …then push, open the PR, merge, and verify origin/main serves the new version
+```
+
+There is no hosted CI: this script is the executor, not a mirror of one, so the
+check list has exactly one definition and that file is it. A green run writes a
+receipt to `<git-dir>/proxyme-gate/receipt.json`; the `pre-push` hook installed
+by `proxyme/scripts/install-hooks.sh` refuses to push a commit with no matching
+receipt. Bypass with `PROXYME_GATE_BYPASS=1`, which logs to
+`<git-dir>/proxyme-gate/bypasses.log` rather than hiding.
+
+Individual checks, runnable on their own; each resolves its own paths.
 
 ```bash
 proxyme/lib/proxyme-paths.test.sh              # path module, canonical fragments, section freeze
@@ -95,7 +109,15 @@ proxyme/lib/proxyme-paths.mutation.test.sh     # mutation arms proving the above
 proxyme/skills/proxyme-identity/proxyme-identity.test.sh
 proxyme/skills/proxyme-validate/proxyme-validate.test.sh
 scripts/verify-profile-design.sh               # repo-level, outside the plugin
+scripts/verify-version-bump.sh                 # version triple agrees; every plugin-touching commit bumps
+scripts/verify-version-bump.test.sh            # arms proving that verifier catches an unbumped commit
+scripts/prepush-guard.test.sh                  # arms proving the guard blocks an unGated push
 ```
+
+The version checks exist because the bump lives in an untracked hook: a clone
+that never ran `install-hooks.sh` ships plugin changes under a frozen version,
+and the marketplace then serves new content under a number every cache already
+holds. See `docs/adr/0006-ci-is-local-and-the-gate-lands-the-vers.md`.
 
 The mutation harness copies the plugin tree to a throwaway directory, applies
 one named mutation per arm, and asserts that a NAMED assertion in the paths

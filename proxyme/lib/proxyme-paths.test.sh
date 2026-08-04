@@ -9,6 +9,10 @@
 #
 # Run:  ./proxyme-paths.test.sh
 #
+# Mutation coverage: ./proxyme-paths.mutation.test.sh runs this suite against
+# mutated copies of the shipped tree and asserts that a NAMED assertion here
+# fires for each mutation. Add an arm there when you add or change an assertion.
+#
 # Real-run evidence for /proxyme (skill-validation-before-merge)
 #
 # Observed result (real run, project-scoped state):
@@ -45,10 +49,25 @@ fail() { echo "FAIL: $*" >&2; FAILS=$((FAILS+1)); }
 pass() { echo "PASS: $*"; }
 check() { if [ "$2" = "$3" ]; then pass "$1"; else fail "$1 (got '$2', want '$3')"; fi; }
 
+# have_file <path> <label> — true when the file exists AND is readable. Reports
+# a missing or unreadable input at most ONCE per path, whichever assertion
+# reaches it first, so one root cause produces one failure line however many
+# checks read that file. Callers skip their own check when it returns false;
+# they never add a second failure for the same absence.
+MISSING_REPORTED=""
+have_file() {
+  if [ -f "$1" ] && [ -r "$1" ]; then return 0; fi
+  case "$MISSING_REPORTED" in
+    *"[$1]"*) : ;;
+    *) fail "$2 missing or unreadable: $1"; MISSING_REPORTED="${MISSING_REPORTED}[$1]" ;;
+  esac
+  return 1
+}
+
 [ -f "$PATHS_SH" ] || { echo "FAIL: module not found: $PATHS_SH" >&2; exit 1; }
 
 # --- Assertion 1: every export is present ------------------------------------
-OUT="$(bash "$PATHS_SH")"
+OUT="$(bash "$PATHS_SH" 2>/dev/null || true)"
 for name in \
   PROXYME_ROOT PROXYME_DIR PROXYME_IDENTITY PROXYME_CONFIG PROXYME_CARVEOUTS \
   PROXYME_GLOBAL_IDENTITY PROXYME_GLOBAL_CONFIG PROXYME_USER PROXYME_SID PROXYME_FLAG \
@@ -63,7 +82,19 @@ do
 done
 
 # --- Assertion 2: plugin paths resolve to things that exist ------------------
-eval "$OUT"
+# Only assignment lines are eval'd: if the module errored, its diagnostics must
+# not run as shell. Every assertion below dereferences these names under
+# `set -u`, where an unset one aborts the script instead of failing a check, so
+# a module that produced nothing usable stops the run HERE, with a RESULT: line.
+eval "$(printf '%s\n' "$OUT" | grep -E '^PROXYME_[A-Z_]+="' || true)"
+for name in PROXYME_PLUGIN_ROOT PROXYME_LIB PROXYME_SKILLS PROXYME_USER \
+            PROXYME_CARVEOUTS_CANON PROXYME_TERSE_CONTRACT PROXYME_SMART_CLIP
+do
+  [ -n "${!name:-}" ] && continue
+  fail "path module produced no $name; the assertions below cannot run"
+  echo "RESULT: $FAILS assertion(s) failed" >&2
+  exit 1
+done
 [ -d "$PROXYME_PLUGIN_ROOT" ] && pass "PROXYME_PLUGIN_ROOT is a directory" \
   || fail "PROXYME_PLUGIN_ROOT does not resolve: $PROXYME_PLUGIN_ROOT"
 [ -d "$PROXYME_LIB" ] && pass "PROXYME_LIB is a directory" \
@@ -99,7 +130,10 @@ rm -rf "$CONTROL_DIR"
 if [ -f "$PROXYME_CARVEOUTS_CANON" ]; then
   pass "canonical carve-outs file exists"
   NEEDLE="$(grep -m1 '^- ' "$PROXYME_CARVEOUTS_CANON" | sed 's/^- //')"
-  HITS="$(grep -rlF "$NEEDLE" "$PROXYME_PLUGIN_ROOT" | grep -v '\.test\.sh$' | sort || true)"
+  # 2>/dev/null and `|| true`: an unreadable file under the plugin root makes
+  # `grep -r` write "Permission denied" and exit 2, which under pipefail + set -e
+  # would abort the run in an assignment like this one.
+  HITS="$(grep -rlF "$NEEDLE" "$PROXYME_PLUGIN_ROOT" 2>/dev/null | grep -v '\.test\.sh$' | sort || true)"
   HIT_COUNT="$(printf '%s\n' "$HITS" | grep -c . || true)"
   check "policy appears exactly once in the shipped tree" "$HIT_COUNT" "1"
   check "the single hit is the canonical file" "$HITS" "$PROXYME_CARVEOUTS_CANON"
@@ -138,7 +172,7 @@ if [ -f "$PROXYME_TERSE_CONTRACT" ]; then
   if [ -z "$TNEEDLE" ]; then
     fail "terse-contract is missing its distinguishing phrase 'Quote evidence verbatim'"
   else
-    THITS="$(grep -rlF "$TNEEDLE" "$PROXYME_PLUGIN_ROOT" | grep -v '\.test\.sh$' | sort)"
+    THITS="$(grep -rlF "$TNEEDLE" "$PROXYME_PLUGIN_ROOT" 2>/dev/null | grep -v '\.test\.sh$' | sort || true)"
     THIT_COUNT="$(printf '%s\n' "$THITS" | grep -c . || true)"
     check "density contract appears exactly once in the shipped tree" "$THIT_COUNT" "1"
     check "the single hit is the canonical contract" "$THITS" "$PROXYME_TERSE_CONTRACT"
@@ -162,8 +196,9 @@ OLD_STYLE="$SCRIPT_DIR/../proxyme/SKILL.md"     # what $(dirname "$0")/../proxym
   || fail "old \$0-derived path unexpectedly resolves: $OLD_STYLE"
 
 PROXY_SKILL="$PROXYME_SKILLS/proxyme/SKILL.md"
-[ -f "$PROXY_SKILL" ] && pass "PROXYME_SKILLS resolves the /proxyme skill" \
-  || fail "PROXYME_SKILLS does not reach the /proxyme skill: $PROXY_SKILL"
+if have_file "$PROXY_SKILL" "/proxyme skill"; then
+  pass "PROXYME_SKILLS resolves the /proxyme skill"
+fi
 
 # Execute the guard AS THE SKILL SHIPS IT — do not reimplement its grep/comm here.
 # A test that restates the algorithm stays green through a full revert of the fix,
@@ -179,42 +214,51 @@ STALE_FIXTURE="$PROXYME_SKILLS/proxyme-identity/fixtures/stale-flags.md"
 #
 # Extracted once, above both users: assertion 7 runs this block, assertion 9
 # reads its section anchor. A second copy of the locator could drift from this
-# one and then fail as if the anchor had moved.
+# one and then fail as if the anchor had moved — and a second emptiness test
+# would report one edit (a guard whose block no longer contains the needle) as
+# two distinct failures, so that test lives here, once, beside the extraction.
+#
+# The `|| true` is load-bearing: a plain assignment takes the substitution's
+# exit status, so without it an unreadable skill aborts the whole file under
+# `set -e` — no RESULT: line, exit 2, and every assertion below silently never
+# runs. Substitutions in ARGUMENT position (inside a `check` call) cannot do
+# that; this one, being an assignment, can.
 GUARD_BLOCK=""
-if [ -f "$IDENT_SKILL" ]; then
+if have_file "$IDENT_SKILL" "/proxyme-identity skill"; then
   GUARD_BLOCK="$(awk '
     /^```bash$/ { inblk=1; buf=""; next }
     /^```$/     { if (inblk && buf ~ /comm -23/) { printf "%s", buf; exit }
                   inblk=0; next }
     inblk       { buf = buf $0 "\n" }
-  ' "$IDENT_SKILL")"
+  ' "$IDENT_SKILL" 2>/dev/null || true)"
+  if [ -n "$GUARD_BLOCK" ]; then
+    pass "extracted the staleness-guard block from the shipped skill"
+  else
+    fail "could not find the staleness-guard bash block in $IDENT_SKILL"
+  fi
 fi
 
-if [ -f "$STALE_FIXTURE" ] && [ -f "$PROXY_SKILL" ] && [ -f "$IDENT_SKILL" ]; then
-  if [ -z "$GUARD_BLOCK" ]; then
-    fail "could not find the staleness-guard bash block in $IDENT_SKILL"
-  else
-    pass "extracted the staleness-guard block from the shipped skill"
-    RUNNABLE="$(printf '%s' "$GUARD_BLOCK" | sed "s|<PLUGIN_ROOT>|$PROXYME_PLUGIN_ROOT|g")"
-    TMP_PROJ="$(mktemp -d)"
-    mkdir -p "$TMP_PROJ/.claude/proxyme"
-    cp "$STALE_FIXTURE" "$TMP_PROJ/.claude/proxyme/${PROXYME_USER}-identity.md"
-    STALE="$(cd "$TMP_PROJ" && bash -c "$RUNNABLE" 2>/dev/null || true)"
-    rm -rf "$TMP_PROJ"
+# Each input is guarded by `have_file`, which reports it once for the whole run:
+# a missing fixture is one failure here, not a failure plus a raw `grep:` error
+# interleaved into the PASS/FAIL stream. Same policy as assertion 5's comment.
+if [ -n "$GUARD_BLOCK" ] \
+   && have_file "$STALE_FIXTURE" "staleness fixture" \
+   && have_file "$PROXY_SKILL" "/proxyme skill"; then
+  RUNNABLE="$(printf '%s' "$GUARD_BLOCK" | sed "s|<PLUGIN_ROOT>|$PROXYME_PLUGIN_ROOT|g" || true)"
+  TMP_PROJ="$(mktemp -d)"
+  mkdir -p "$TMP_PROJ/.claude/proxyme"
+  cp "$STALE_FIXTURE" "$TMP_PROJ/.claude/proxyme/${PROXYME_USER}-identity.md"
+  STALE="$(cd "$TMP_PROJ" && bash -c "$RUNNABLE" 2>/dev/null || true)"
+  rm -rf "$TMP_PROJ"
 
-    case "$STALE" in
-      *--nonew*) pass "shipped guard reports --nonew as stale" ;;
-      *)         fail "shipped guard did not report --nonew as stale (got: '$STALE')" ;;
-    esac
-    case "$STALE" in
-      *--off*) fail "shipped guard wrongly reported --off, which /proxyme still documents" ;;
-      *)       pass "shipped guard does not report --off, which is current" ;;
-    esac
-  fi
-else
-  [ -f "$STALE_FIXTURE" ] || fail "staleness fixture missing: $STALE_FIXTURE"
-  [ -f "$PROXY_SKILL" ]   || fail "/proxyme skill missing: $PROXY_SKILL"
-  [ -f "$IDENT_SKILL" ]   || fail "/proxyme-identity skill missing: $IDENT_SKILL"
+  case "$STALE" in
+    *--nonew*) pass "shipped guard reports --nonew as stale" ;;
+    *)         fail "shipped guard did not report --nonew as stale (got: '$STALE')" ;;
+  esac
+  case "$STALE" in
+    *--off*) fail "shipped guard wrongly reported --off, which /proxyme still documents" ;;
+    *)       pass "shipped guard does not report --off, which is current" ;;
+  esac
 fi
 
 # --- Assertion 8: evidence lives in tests, and every skill points at one ------
@@ -223,10 +267,7 @@ fi
 # skill body is loaded into the model's context on every invocation.
 for skill in proxyme proxyme-identity proxyme-validate proxyme-model; do
   SKILL_MD="$PROXYME_SKILLS/$skill/SKILL.md"
-  if [ ! -f "$SKILL_MD" ]; then
-    fail "skill not found: $SKILL_MD"
-    continue
-  fi
+  have_file "$SKILL_MD" "$skill skill" || continue
   if grep -q 'Observed result' "$SKILL_MD"; then
     fail "$skill: evidence prose still inline (found 'Observed result')"
   else
@@ -261,50 +302,90 @@ done
 # proxy". Only the number survives translation.
 SECTION_NUM=7
 
-# Each check below compares the whole matched text rather than counting matches
-# and then extracting the digits. `grep -oE` already prints one line per match,
-# so a duplicated heading (two lines), a renumbered one (wrong digit) and a
-# missing one (empty) all fail the same equality — the separate count assertions
-# were restating what the comparison already covers.
-#
-# A missing $IDENT_SKILL is already reported by assertion 7 and assertion 8, so
-# this block guards without adding a third failure line for one root cause.
-if [ -f "$IDENT_SKILL" ]; then
-  # (a) the synthesis template's heading
+# The four checks do NOT share a detection property; each states its own below.
+# Every input is guarded by `have_file`, so a missing one is reported once for
+# the whole run and only the check that reads it is skipped — the checks that do
+# not read it still run and still report. Nothing here is silently skipped.
+
+# (a) the synthesis template's heading. Compares the whole matched text, so a
+# duplicated heading (two lines), a renumbered one (wrong digit) and a missing
+# one (empty) all fail this one equality, each with a distinguishable `got`.
+if have_file "$IDENT_SKILL" "/proxyme-identity skill"; then
   check "template heading is section $SECTION_NUM, exactly once" \
     "$(grep -oE '^## [0-9]+\. Proxy operational rules' "$IDENT_SKILL")" \
     "## $SECTION_NUM. Proxy operational rules"
+fi
 
-  # (b) the guard's own anchor — read out of the EXTRACTED BLOCK, never the whole
-  # file. Prose elsewhere in the skill can legitimately quote a sed anchor (an
-  # example, a changelog line, a description of the old behaviour); grepping the
-  # file and taking the first hit would silently check that instead of the guard.
-  if [ -z "$GUARD_BLOCK" ]; then
-    fail "could not find the staleness-guard block to check its section anchor"
+# (b) the guard's own anchor — read out of the EXTRACTED BLOCK, never the whole
+# file. Prose elsewhere in the skill can legitimately quote a sed anchor (an
+# example, a changelog line, a description of the old behaviour); grepping the
+# file and taking the first hit would silently check that instead of the guard.
+# Same whole-text comparison as (a), so a duplicated anchor also fails. An
+# unfindable block is reported once, where it is extracted, not again here.
+if [ -n "$GUARD_BLOCK" ]; then
+  check "guard anchor is section $SECTION_NUM, exactly once" \
+    "$(printf '%s\n' "$GUARD_BLOCK" | grep -oE '\^## [0-9]+')" "^## $SECTION_NUM"
+fi
+
+# (c) prose references to the section, so updating the two mechanical values
+# above cannot leave the surrounding instructions saying something else.
+#
+# The covered set is EXPLICIT, listed here and reviewable in a diff, rather than
+# whatever a recursive grep reaches. A `grep -r` over the plugin root read this
+# test's own comments (so the assertion could be satisfied — and a correct
+# renumber blocked — by prose that never ships), and read untracked working-tree
+# debris such as a `SKILL.md.orig` left by a conflicted merge, letting an
+# unversioned file decide the build result.
+#
+# Checked per file, presence-wise: each covered file must still name the frozen
+# number. That is what makes deletion in ONE file a failure — set-equality
+# across the tree passed as long as any other file still said Section 7 — and
+# what lets legitimate prose about a DIFFERENT section of the template (the
+# template defines 1 through 7) coexist with it. The converse is not covered: a
+# file that names the frozen number and ALSO names another one passes, so this
+# check does not detect a stray duplicate reference.
+#
+# Adding a shipped file that names the section means adding it here — and to the
+# covered-file list in proxyme/AGENTS.md, which documents this freeze for
+# contributors who meet it while editing prose rather than while running tests.
+SECTION_REF_FILES="lib/carve-outs.md skills/proxyme-identity/SKILL.md AGENTS.md"
+for rel in $SECTION_REF_FILES; do
+  ref_file="$PROXYME_PLUGIN_ROOT/$rel"
+  have_file "$ref_file" "section-reference file" || continue
+  ref_hit="$(grep -noE "Section [0-9]+" "$ref_file" | grep -E ":Section ${SECTION_NUM}\$" | head -1 || true)"
+  if [ -n "$ref_hit" ]; then
+    pass "$rel names Section $SECTION_NUM (line ${ref_hit%%:*})"
   else
-    check "guard anchor is section $SECTION_NUM, exactly once" \
-      "$(printf '%s\n' "$GUARD_BLOCK" | grep -oE '\^## [0-9]+')" "^## $SECTION_NUM"
+    # Name the file — and the numbers it does carry — so the repair does not
+    # start with a manual `grep -rn` to find which file went stale.
+    ref_found="$(grep -hoE 'Section [0-9]+' "$ref_file" | sort -u | tr '\n' ' ' | sed 's/ *$//' || true)"
+    fail "$rel no longer names Section $SECTION_NUM (numbers found: ${ref_found:-none})"
   fi
+done
 
-  # (c) every prose reference to the section, so updating the two mechanical
-  # values above cannot leave the surrounding instructions saying something else.
-  # Scanned across the whole shipped tree, not just this skill: lib/carve-outs.md
-  # names Section 7 as well, and a single-file scan leaves it behind on a
-  # renumber. Stated positively, because the negative form — filter out the good
-  # references, expect nothing left — also passes when there are none at all.
-  check "every 'Section N' reference in the shipped tree says $SECTION_NUM" \
-    "$(grep -rhoE 'Section [0-9]+' "$PROXYME_PLUGIN_ROOT" | sort -u)" \
-    "Section $SECTION_NUM"
-
-  # (d) the fixture, so assertion 7 cannot pass while exercising an empty
-  # extraction. Frozen at the same number for the same reason: it is this repo's
-  # only representation of the on-disk identity format. Counted, rather than
-  # required to be the fixture's ONLY numbered section: the guard's `sed` scoping
-  # exists to ignore flags quoted outside section 7, so a fixture that grows such
-  # a section is what would finally exercise the scoping — that must not be a
-  # build failure. Assertion 7 is missing that arm today.
-  check "staleness fixture holds section $SECTION_NUM exactly once" \
-    "$(grep -cE "^## ${SECTION_NUM}\\." "$STALE_FIXTURE")" "1"
+# (d) the fixture, so assertion 7 cannot pass while exercising an empty
+# extraction. Frozen at the same number for the same reason: it is this repo's
+# only representation of the on-disk identity format.
+#
+# The whole list of numbered headings is compared, in file order, so a renumber
+# ('8'), a lost heading ('') and a grown section ('7 8') are three different
+# `got` values and three different repairs. A count could not tell them apart.
+#
+# A grown section must fail: the shipped guard scopes with
+# `sed -n '/^## 7\./,$p'`, and `,$p` prints to the LAST line of the file. It
+# excludes sections before 7 only; anything after 7 is swept in. Verified: a
+# `## 8.` section holding `--dryrun` yields `--dryrun --nonew --off` from the
+# guard's scope, which assertion 7's two `case` tests do not surface.
+#
+# A section BEFORE the frozen one is what would finally exercise that scoping,
+# and assertion 7 has no such arm today. If that fixture is wanted, widen the
+# expectation here deliberately — e.g. to "1 7" — rather than by weakening the
+# check into something a grown later section also satisfies.
+FIXTURE_SECTIONS="$SECTION_NUM"
+if have_file "$STALE_FIXTURE" "staleness fixture"; then
+  check "staleness fixture's numbered sections are exactly '$FIXTURE_SECTIONS'" \
+    "$(grep -oE '^## [0-9]+\.' "$STALE_FIXTURE" | grep -oE '[0-9]+' | tr '\n' ' ' | sed 's/ *$//')" \
+    "$FIXTURE_SECTIONS"
 fi
 
 if [ "$FAILS" -ne 0 ]; then

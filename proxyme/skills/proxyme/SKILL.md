@@ -186,9 +186,13 @@ For each question:
 2. **Read the identity file:** full content of `$PROXYME_IDENTITY`.
 3. **Read the canonical policy and both carve-out sources.** Run:
    ```bash
-   eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"; cat "$PROXYME_CARVEOUTS_CANON"
+   eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"; sed -n '/^- /p' "$PROXYME_CARVEOUTS_CANON"
    ```
-   That output is the absolute carve-out list, verbatim, for the briefing below.
+   That output — the bullet list and nothing else — is the absolute carve-out
+   list, verbatim, for the briefing below. Extract the bullets rather than
+   `cat`-ing the file: the canonical file also carries a maintainer comment,
+   and pasting it would put internal architecture notes into every proxy's
+   spawn prompt.
    Then read the two *session* carve-out sources, which are additive and passed
    to the proxy labelled so it can tell machine-wide standing authorization from
    repo-specific limits:

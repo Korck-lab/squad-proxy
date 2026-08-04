@@ -72,7 +72,7 @@ rm -rf "$CONTROL_DIR"
 if [ -f "$PROXYME_CARVEOUTS_CANON" ]; then
   pass "canonical carve-outs file exists"
   NEEDLE="$(grep -m1 '^- ' "$PROXYME_CARVEOUTS_CANON" | sed 's/^- //')"
-  HITS="$(grep -rlF "$NEEDLE" "$PROXYME_PLUGIN_ROOT" | grep -v '\.test\.sh$' | sort)"
+  HITS="$(grep -rlF "$NEEDLE" "$PROXYME_PLUGIN_ROOT" | grep -v '\.test\.sh$' | sort || true)"
   HIT_COUNT="$(printf '%s\n' "$HITS" | grep -c . || true)"
   check "policy appears exactly once in the shipped tree" "$HIT_COUNT" "1"
   check "the single hit is the canonical file" "$HITS" "$PROXYME_CARVEOUTS_CANON"
@@ -86,13 +86,18 @@ fi
 # text in the same order once markdown emphasis is stripped.
 REPO_ROOT="$(cd "$PROXYME_PLUGIN_ROOT/.." && pwd)"
 README="$REPO_ROOT/README.md"
-if [ -f "$README" ]; then
+# Guard on BOTH files. The script runs under `set -euo pipefail`, so an
+# unguarded grep against a missing canonical file aborts the whole run — no
+# RESULT: line, exit 2, and every assertion after this one silently never runs.
+# That is the opposite of what a regression test is for.
+if [ -f "$README" ] && [ -f "$PROXYME_CARVEOUTS_CANON" ]; then
   CANON_ITEMS="$(grep '^- ' "$PROXYME_CARVEOUTS_CANON" | sed 's/^- //')"
   README_ITEMS="$(sed -n '/^### Never decides/,/^###[^#]/p' "$README" \
     | grep '^- ' | sed 's/^- //; s/\*\*//g')"
   check "README lists the same six items in the same order" "$README_ITEMS" "$CANON_ITEMS"
 else
-  fail "README not found: $README"
+  [ -f "$README" ] || fail "README not found: $README"
+  [ -f "$PROXYME_CARVEOUTS_CANON" ] || fail "canonical file missing, README parity not checked"
 fi
 
 if [ "$FAILS" -ne 0 ]; then

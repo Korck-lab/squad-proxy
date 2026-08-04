@@ -96,11 +96,13 @@ Neither was visible from the questions that motivated the fix; both surfaced onl
   - The actor is the read-only `proxyme:proxy`; it inherits the absolute carve-outs from `$PROXYME_CARVEOUTS_CANON` and never executes.
   - If the score cannot reach 8.5/10 within the retry cap, the decision escalates to the **real user** — the loop does not silently accept a weak identity.
 
-## Real-run evidence (skill-validation-before-merge)
+## Real-run evidence
 
-This skill has been run end-to-end multiple times. **Observed result (2026-07-27):** pass 1 **cleared** the gating threshold at 9.2/10 and *still* carried four technical defects the score did not block on — a secret-debugging rule that forbade raw values and then proposed a raw substring; a census-vs-probe rule that never generalised from code to data; an observability reflex coupled to GPU jobs only; and verification numbers written into an explicitly ephemeral handoff. Four *general* rules were added (no question/answer pair copied in). Pass 2 verified all four **FIXED** at 9.0/10 on four scenario-different questions — and the mandatory edge re-probe then caught **two new defects introduced by those very fixes**: an absolute with no infeasibility branch that contradicted a neighbouring rule, and a widened rule with no duration threshold that collided with the identity's own anti-scope-inflation rule. Both were repaired; 3/3 re-probes passed.
-
-**Two lessons that generalise:** clearing the threshold is not the same as being defect-free, and an adjustment that introduces a contradiction is not an improvement. That run is captured in `fixtures/sample-scorecard.json` and asserted by `proxyme-validate.test.sh` (gating-only averages, `rubric_scored` provenance, the 8.5/10 threshold, accept/iterate logic, the edge re-probe with every self-inflicted defect repaired, and the anti-overfit `specific_case_inserted: false` flag).
+Recorded in the header of `proxyme-validate.test.sh`, which asserts the
+scorecard invariants that evidence describes: gating-only averages,
+`rubric_scored` provenance, the 8.5/10 threshold, accept/iterate logic, the edge
+re-probe with every self-inflicted defect repaired, and the anti-overfit
+`specific_case_inserted: false` flag.
 
 Run the evidence check:
 

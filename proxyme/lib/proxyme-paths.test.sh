@@ -8,6 +8,33 @@
 # one that kept the expression.
 #
 # Run:  ./proxyme-paths.test.sh
+#
+# Real-run evidence for /proxyme (skill-validation-before-merge)
+#
+# Observed result (real run, project-scoped state):
+#   1. Path resolution against the live machine, three arms:
+#      - repo root -> PROXYME_ROOT is the repo; PROXYME_FLAG is
+#        /tmp/proxyme-<12-hex>-<session_id>.active
+#      - control arm, temp dir with no .claude/ and no git -> PROXYME_ROOT is the
+#        temp dir, NOT $HOME. Without the [ "$d" != "$HOME" ] guard this arm
+#        resolves to $HOME and every such repo silently shares one state
+#        directory. The control arm is what proves the class, not just the path.
+#      - subdirectory of a repo -> same PROXYME_ROOT and identical PROXYME_FLAG
+#        as the repo root. This is the regression root-keying fixes: $PWD-keying
+#        returned a different flag path from a subdirectory, so consultation mode
+#        read as OFF.
+#   2. CLAUDE_PLUGIN_ROOT is UNSET in Bash tool calls
+#      (echo "[${CLAUDE_PLUGIN_ROOT:-UNSET}]" -> [UNSET]). The plugin root is
+#      therefore derived from this module's own location.
+#   3. Seed path against a second real project: SEEDED ->
+#      .claude/proxyme/{<user>-identity.md,config.json,carve-outs.md} created,
+#      identity byte-identical to the global file, global checksum unchanged
+#      afterwards — proving the global copy is a template, not shared state.
+#   4. Ignore guard: git check-ignore -q .claude/proxyme/ on a repo whose
+#      .gitignore does not cover .claude/ -> EXCLUDED, entry appended to
+#      .git/info/exclude, git status clean.
+#   No PII is captured here — only path structure and config, never identity
+#   contents.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -178,6 +205,28 @@ else
   [ -f "$PROXY_SKILL" ]   || fail "/proxyme skill missing: $PROXY_SKILL"
   [ -f "$IDENT_SKILL" ]   || fail "/proxyme-identity skill missing: $IDENT_SKILL"
 fi
+
+# --- Assertion 8: evidence lives in tests, and every skill points at one ------
+# The validation guardrail accepts evidence inline in the skill OR in a
+# colocated .test.sh. This project standardises on the test file, because a
+# skill body is loaded into the model's context on every invocation.
+for skill in proxyme proxyme-identity proxyme-validate proxyme-model; do
+  SKILL_MD="$PROXYME_SKILLS/$skill/SKILL.md"
+  if [ ! -f "$SKILL_MD" ]; then
+    fail "skill not found: $SKILL_MD"
+    continue
+  fi
+  if grep -q 'Observed result' "$SKILL_MD"; then
+    fail "$skill: evidence prose still inline (found 'Observed result')"
+  else
+    pass "$skill: no inline evidence prose"
+  fi
+  if grep -q '\.test\.sh' "$SKILL_MD"; then
+    pass "$skill: points at a test file"
+  else
+    fail "$skill: names no .test.sh"
+  fi
+done
 
 if [ "$FAILS" -ne 0 ]; then
   echo "RESULT: $FAILS assertion(s) failed" >&2

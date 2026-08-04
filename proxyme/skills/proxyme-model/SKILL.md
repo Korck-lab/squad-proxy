@@ -116,3 +116,4 @@ Confirm: `"Proxy config reset to defaults: opus / xhigh."`
 - Config persists across sessions, **per project** — setting it in one repo does not change any other
 - If the project has no config file, `/proxyme` seeds it from `~/.claude/skills/proxyme/config.json` on first activation, or defaults to `opus` + `xhigh`
 - Changing model while proxy is active has no effect until next `/proxyme` activation
+- Real-run evidence: the config path this skill reads and writes is asserted by `lib/proxyme-paths.test.sh` (`PROXYME_CONFIG`, `PROXYME_DIR`). Run `./proxyme/lib/proxyme-paths.test.sh`.

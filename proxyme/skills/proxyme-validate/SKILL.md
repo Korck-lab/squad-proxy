@@ -40,19 +40,26 @@ The critic scores every answer 0–10 on five dimensions. **Four of them gate ac
 
 Why voice does not gate: a wrong-sounding right answer is a cosmetic defect; a right-sounding wrong answer is the one that costs. Voice is still scored, because a collapse there is a signal worth seeing — it just never blocks a run or triggers an iteration on its own.
 
+**Every iteration records `defects_reported` and `adjustments_applied`.** They are what makes the two accepted shapes machine-readable: an accepted pass with `defects_reported > 0` and `adjustments_applied: false` is the state this skill forbids — defects known, file unchanged, report indistinguishable from a clean run. `proxyme-validate.test.sh` asserts it.
+
 **Every scorecard must record `rubric_scored`** — the exact dimension list that produced the average. Scores computed under different critic instructions are **not comparable**: a run where the critic was told to penalise each voice violation per-occurrence will report a lower `voice_fidelity` than one where it was not, and reading that as a regression is a measurement error, not a finding. Without `rubric_scored` written down, nobody can tell the two apart later. The canonical schema and a documented real run live in `fixtures/sample-scorecard.json`.
 
 ## Reporting style
 
+**Version skew, first line, only when it exists.** When `$PROXYME_VERSION_NOTE` is non-empty, print it before the verdict and carry on. It means this run scored the identity using a cached version older than the newest installed one, which is exactly the kind of difference that makes two scorecards incomparable. Empty note, print nothing.
+
 **To the user.** Lead with the verdict — accepted or escalated — then the gating average, then the per-dimension scores. No preamble, no narrating which agents you spawned, no closing summary, no offer of further help. Report the run as a compact block:
 
 ```
-<ACCEPTED at 9.0/10 | ESCALATED after 3 iterations, best 8.1/10>
+<ACCEPTED at 9.0/10 | ACCEPTED WITH DEFECTS at 9.46/10, 7 found, adjustments applied | ESCALATED after 3 iterations, best 8.1/10>
 decision_alignment <n> · technical_accuracy <n> · boundary_respect <n> · specificity <n> · voice_fidelity <n> (non-gating)
 Iterations: <n> · Edits applied: <one line each, general rules only>
 Re-probe: <n>/<n> passed · New defects introduced: <list, or "none">
+Scorecard: <path written under $PROXYME_SCORECARDS>
 Remaining gaps: <list, or omit the line>
 ```
+
+The first word of the verdict separates the two accepted shapes. `ACCEPTED` means the critic reported no defect; `ACCEPTED WITH DEFECTS` means it did, and the line says how many and whether the adjustments were applied. A reader who stops at the first line must not mistake one for the other.
 
 Cut words, never findings. Every defect the critic found stays in the report even on an accepted run — the 2026-07-27 pass cleared 9.2/10 while carrying four real defects, so a score-only report actively misleads. Failures and remaining gaps get named in full; padding around bad news reads as evasion.
 
@@ -76,10 +83,22 @@ Cut words, never findings. Every defect the critic found stays in the report eve
    The `sed` yields the absolute carve-out bullets and nothing else; the `cat` yields the density contract. These are the same canonical files the live briefing interpolates, extracted the same way, so a score says something about the proxy that will actually run.
    Then spawn a FRESH `proxyme:proxy` per held-out question, briefed with the *candidate* identity, the question, those carve-out bullets, and that density contract. Collect each one-shot answer.
 3. **Run the critic.** Spawn one Opus agent, hand it the rubric and the actor answers, and have it return a scorecard (per-dimension scores + per-question and overall averages, plus `rubric_scored`) in the `fixtures/sample-scorecard.json` shape.
-4. **Decide (conditional 1).** If the gating average is **≥ 8.5/10**, accept: report the scorecard and stop.
-5. **Iterate (conditional 2).** Else, if retries remain (cap below), apply the critic's *general* adjustments to `$PROXYME_IDENTITY`, then run the **edge re-probe** in step 6 before re-drawing and looping to step 2.
-6. **Edge re-probe (mandatory after any edit).** A rule added to fix one defect can contradict a rule already in the file. After applying adjustments, draw **1–2 extra questions aimed at the edge the new rule created** — not at the case that failed — and have the critic report `new_defects_introduced`. Fix those before continuing; an adjustment that introduces a contradiction is not an improvement.
-7. **Give up gracefully (conditional 3).** If the **retry cap** is reached without passing, stop, report the best scorecard and the remaining gaps, and recommend the real user review the identity manually — do not keep tuning.
+4. **Decide (conditional 1).** If the gating average is **≥ 8.5/10**, accept — but accepting is a statement about the SCORE, not about the file. Read the critic's defect list before stopping.
+   - **Accepted, no defects reported** → write the scorecard (step 8), report `ACCEPTED`, stop.
+   - **Accepted, defects reported (conditional 2)** → apply the critic's *general* adjustments to `$PROXYME_IDENTITY`, run the **edge re-probe** in step 6, repair whatever it finds, write the scorecard, and report `ACCEPTED WITH DEFECTS`. Do **not** re-draw and re-score: the threshold is already met, and the re-probe — not another scored pass — is what proves the edits introduced no contradiction. This is what the documented 2026-07-27 run did at pass 1 (accepted at 9.2, four defects, four general rules added), and it is the intended behaviour, not an exception to it.
+5. **Iterate (conditional 3).** If the average is **below** the threshold and retries remain (cap below), apply the critic's *general* adjustments to `$PROXYME_IDENTITY`, then run the **edge re-probe** in step 6 before re-drawing and looping to step 2.
+6. **Edge re-probe (mandatory after any edit).** A rule added to fix one defect can contradict a rule already in the file. After applying adjustments, draw **1–2 extra questions aimed at the edge the new rule created** — not at the case that failed — and have the critic report `new_defects_introduced`. Fix those before continuing; an adjustment that introduces a contradiction is not an improvement. This obligation attaches to EVERY path that edits the identity, including the accepted-with-defects path above.
+7. **Give up gracefully (conditional 4).** If the **retry cap** is reached without passing, stop, report the best scorecard and the remaining gaps, and recommend the real user review the identity manually — do not keep tuning.
+8. **Write the scorecard.** Every run — accepted, accepted-with-defects, or escalated — writes its scorecard to `$PROXYME_SCORECARDS`, one file per run named for the run's UTC timestamp:
+
+   ```bash
+   eval "$(bash "<PLUGIN_ROOT>/lib/proxyme-paths.sh")"; mkdir -p "$PROXYME_SCORECARDS"
+   # then write the JSON to "$PROXYME_SCORECARDS/$(date -u +%Y%m%dT%H%M%SZ)-scorecard.json"
+   ```
+
+   A run never overwrites an earlier scorecard — the history is the point. The directory sits under `$PROXYME_DIR`, which the plugin already excludes from git, so a run in a clean repo leaves `git status` clean; the file holds behavioural findings about the user and belongs there, never in the repository and never in the global template directory. If the write fails, report that as one failure line quoting the error verbatim and still print the verdict — persistence never swallows the result.
+
+   **Comparing two scorecards:** compare `rubric_scored` first. Averages produced under different dimension lists are **not comparable**, and reading their delta as a regression is a measurement error, not a finding. Only when the two lists match does the difference in `result.average` mean anything.
 
 ### Why step 6 exists
 
@@ -92,7 +111,7 @@ Neither was visible from the questions that motivated the fix; both surfaced onl
 
 **Retry cap: 3 iterations** (the standard actor/critic bound). The loop always terminates: accept on pass, or stop and escalate after 3 tries.
 
-**Orchestration budget:** this loop uses 3 conditionals — within the ≤5 limit of the no-overthink rule, so a fresh agent runs it end-to-end in one session.
+**Orchestration budget:** this loop uses 4 conditionals — within the ≤5 limit of the no-overthink rule, so a fresh agent runs it end-to-end in one session.
 
 ## Delegation contract (who decides / what authority / carve-outs)
 

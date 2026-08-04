@@ -72,7 +72,8 @@ for name in \
   PROXYME_ROOT PROXYME_DIR PROXYME_IDENTITY PROXYME_CONFIG PROXYME_CARVEOUTS \
   PROXYME_GLOBAL_IDENTITY PROXYME_GLOBAL_CONFIG PROXYME_USER PROXYME_SID PROXYME_FLAG \
   PROXYME_PLUGIN_ROOT PROXYME_LIB PROXYME_SKILLS \
-  PROXYME_CARVEOUTS_CANON PROXYME_TERSE_CONTRACT PROXYME_SMART_CLIP
+  PROXYME_CARVEOUTS_CANON PROXYME_TERSE_CONTRACT PROXYME_SMART_CLIP \
+  PROXYME_SCORECARDS PROXYME_VERSION PROXYME_VERSION_LATEST PROXYME_VERSION_NOTE
 do
   if printf '%s\n' "$OUT" | grep -q "^${name}="; then
     pass "exports ${name}"
@@ -88,7 +89,8 @@ done
 # a module that produced nothing usable stops the run HERE, with a RESULT: line.
 eval "$(printf '%s\n' "$OUT" | grep -E '^PROXYME_[A-Z_]+="' || true)"
 for name in PROXYME_PLUGIN_ROOT PROXYME_LIB PROXYME_SKILLS PROXYME_USER \
-            PROXYME_CARVEOUTS_CANON PROXYME_TERSE_CONTRACT PROXYME_SMART_CLIP
+            PROXYME_CARVEOUTS_CANON PROXYME_TERSE_CONTRACT PROXYME_SMART_CLIP \
+            PROXYME_DIR PROXYME_SCORECARDS PROXYME_VERSION PROXYME_VERSION_LATEST
 do
   [ -n "${!name:-}" ] && continue
   fail "path module produced no $name; the assertions below cannot run"
@@ -278,6 +280,14 @@ for skill in proxyme proxyme-identity proxyme-validate proxyme-model; do
   else
     fail "$skill: names no .test.sh"
   fi
+  # Every skill resolves its paths from this module, so every skill can be the
+  # one running from a stale cached version. A skill that never surfaces the
+  # note is a skill whose user cannot tell which version answered them.
+  if grep -q 'PROXYME_VERSION_NOTE' "$SKILL_MD"; then
+    pass "$skill: surfaces the version-skew note"
+  else
+    fail "$skill: never surfaces PROXYME_VERSION_NOTE"
+  fi
 done
 
 # --- Assertion 9: section 7 is a FROZEN, PERSISTED schema number --------------
@@ -388,6 +398,56 @@ if have_file "$STALE_FIXTURE" "staleness fixture"; then
     "$(grep -oE '^## [0-9]+\.' "$STALE_FIXTURE" | grep -oE '[0-9]+' | tr '\n' ' ' | sed 's/ *$//')" \
     "$FIXTURE_SECTIONS"
 fi
+
+# --- Assertion 10: scorecard state lives under the project state directory -----
+# /proxyme-validate writes one scorecard per run. It holds behavioural findings
+# about the user, so it belongs beside the identity — under the directory the
+# plugin already excludes from git — and never in the repository or the global
+# template directory. Containment is the invariant: a path that escapes
+# $PROXYME_DIR escapes the exclusion that was set up for it.
+case "$PROXYME_SCORECARDS" in
+  "$PROXYME_DIR"/*) pass "scorecard directory is under the project state directory" ;;
+  *) fail "scorecard directory escapes $PROXYME_DIR: $PROXYME_SCORECARDS" ;;
+esac
+
+# --- Assertion 11: the running version is reported, and skew is visible -------
+# A marketplace install lives at <cache>/proxyme/<version>/, and the cache keeps
+# several versions at once. Every path here is derived from this file's own
+# location, so a launch from an older cached version silently reads that
+# version's lib/ — an old path module resolves by old rules, an old smart-clip
+# applies an old filter, and the run reports success either way. The failure
+# mode to close is the silence: running an older version on purpose is fine,
+# not knowing which one ran is not.
+VERSION_FILE="$PROXYME_PLUGIN_ROOT/VERSION"
+if have_file "$VERSION_FILE" "VERSION file"; then
+  check "PROXYME_VERSION is the shipped VERSION file" \
+    "$PROXYME_VERSION" "$(tr -d '[:space:]' < "$VERSION_FILE")"
+fi
+# A checkout has no sibling version directories, so it is its own latest and
+# must stay silent — the check costs nothing on the happy path.
+# `:-` because an empty note is the correct value here, so this one name cannot
+# be required to be non-empty the way the others are.
+check "a checkout reports no version skew" "${PROXYME_VERSION_NOTE:-}" ""
+
+# Fixture with two versions present: the module runs from the OLDER one and must
+# name both. Built here rather than committed, so it cannot drift from the
+# layout the cache actually uses.
+VER_FIXTURE="$(mktemp -d)"
+mkdir -p "$VER_FIXTURE/proxyme/0.0.1/lib" "$VER_FIXTURE/proxyme/9.9.9/lib"
+cp "$PATHS_SH" "$VER_FIXTURE/proxyme/0.0.1/lib/proxyme-paths.sh"
+printf '0.0.1\n' > "$VER_FIXTURE/proxyme/0.0.1/VERSION"
+printf '9.9.9\n' > "$VER_FIXTURE/proxyme/9.9.9/VERSION"
+VER_OUT="$(bash "$VER_FIXTURE/proxyme/0.0.1/lib/proxyme-paths.sh" 2>/dev/null || true)"
+ver_of() { printf '%s\n' "$VER_OUT" | sed -n "s/^$1=\"\\(.*\\)\"\$/\\1/p"; }
+check "stale install reports its own version" "$(ver_of PROXYME_VERSION)" "0.0.1"
+check "stale install finds the newest cached version" "$(ver_of PROXYME_VERSION_LATEST)" "9.9.9"
+VER_NOTE="$(ver_of PROXYME_VERSION_NOTE)"
+case "$VER_NOTE" in
+  *0.0.1*9.9.9*) pass "skew note names the running version and the newest one" ;;
+  "") fail "skew note is empty while 0.0.1 runs beside 9.9.9" ;;
+  *) fail "skew note names neither version pair (got '$VER_NOTE')" ;;
+esac
+rm -rf "$VER_FIXTURE"
 
 if [ "$FAILS" -ne 0 ]; then
   echo "RESULT: $FAILS assertion(s) failed" >&2

@@ -57,12 +57,39 @@ ROOT_HASH="$(printf '%s' "$ROOT" | shasum | cut -c1-12)"
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN_ROOT="$(cd "${LIB_DIR}/.." && pwd)"
 
+# Which version is actually running. Every path above is derived from this
+# file's own location, so a launch from an older cached version silently reads
+# that version's lib/ — old path rules, old smart-clip filter — and reports
+# success either way. Running an older version deliberately is fine; not knowing
+# which one ran is not, so the skew is named rather than corrected here.
+VERSION="$(tr -d '[:space:]' < "${PLUGIN_ROOT}/VERSION" 2>/dev/null || true)"
+[ -n "$VERSION" ] || VERSION="unknown"
+
+# A marketplace install lives at <cache>/proxyme/<version>/ and the cache keeps
+# several versions at once, so the sibling directories ARE the other installed
+# versions. A git checkout has no such siblings and is its own latest.
+LATEST="$VERSION"
+case "$(basename "$PLUGIN_ROOT")" in
+  [0-9]*.[0-9]*.[0-9]*)
+    NEWEST="$(ls -1 "$(dirname "$PLUGIN_ROOT")" 2>/dev/null \
+      | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+      | sort -t. -k1,1n -k2,2n -k3,3n | tail -1 || true)"
+    if [ -n "$NEWEST" ]; then LATEST="$NEWEST"; fi
+    ;;
+esac
+
+NOTE=""
+if [ "$VERSION" != "$LATEST" ]; then
+  NOTE="running proxyme ${VERSION}, but ${LATEST} is installed — reload plugins to pick it up"
+fi
+
 cat <<EOF
 PROXYME_ROOT="${ROOT}"
 PROXYME_DIR="${ROOT}/.claude/proxyme"
 PROXYME_IDENTITY="${ROOT}/.claude/proxyme/${USER_NAME}-identity.md"
 PROXYME_CONFIG="${ROOT}/.claude/proxyme/config.json"
 PROXYME_CARVEOUTS="${ROOT}/.claude/proxyme/carve-outs.md"
+PROXYME_SCORECARDS="${ROOT}/.claude/proxyme/scorecards"
 PROXYME_GLOBAL_IDENTITY="${HOME}/.claude/skills/proxyme/${USER_NAME}-identity.md"
 PROXYME_GLOBAL_CONFIG="${HOME}/.claude/skills/proxyme/config.json"
 PROXYME_USER="${USER_NAME}"
@@ -74,4 +101,7 @@ PROXYME_SKILLS="${PLUGIN_ROOT}/skills"
 PROXYME_CARVEOUTS_CANON="${PLUGIN_ROOT}/lib/carve-outs.md"
 PROXYME_TERSE_CONTRACT="${PLUGIN_ROOT}/lib/terse-contract.md"
 PROXYME_SMART_CLIP="${PLUGIN_ROOT}/lib/smart-clip.sh"
+PROXYME_VERSION="${VERSION}"
+PROXYME_VERSION_LATEST="${LATEST}"
+PROXYME_VERSION_NOTE="${NOTE}"
 EOF

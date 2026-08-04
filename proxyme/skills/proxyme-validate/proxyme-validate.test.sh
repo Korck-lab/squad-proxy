@@ -90,6 +90,26 @@ def approx($a;$b): absdiff($a;$b) < 0.05;
     ( $sc.iterations[] | . as $it
       | if $it.accepted == ($it.average >= $th) then empty
         else "iteration \($it.pass): accepted flag inconsistent with its average" end ),
+
+    # Clearing the threshold is a statement about the SCORE; a reported defect is
+    # a statement about the FILE. An accepted pass that still carries defects
+    # must edit the identity — otherwise the run ends with the defects known,
+    # unfixed, and indistinguishable in the report from a clean pass.
+    ( $sc.iterations[] | . as $it
+      | if ($it.defects_reported|type) == "number" then empty
+        else "iteration \($it.pass): defects_reported missing — a clean pass and a pass with unfixed defects read alike" end ),
+      ( $sc.iterations[] | . as $it
+        | if ($it.adjustments_applied|type) == "boolean" then empty
+          else "iteration \($it.pass): adjustments_applied missing" end ),
+      ( $sc.iterations[] | . as $it
+        | if ($it.accepted and $it.defects_reported > 0 and ($it.adjustments_applied|not))
+          then "iteration \($it.pass): accepted with \($it.defects_reported) defect(s) and no adjustment applied"
+          else empty end ),
+      # An edit without the edge re-probe is the failure step 6 exists to prevent.
+      ( $sc.iterations[] | . as $it
+        | if ($it.adjustments_applied and ($sc.edge_reprobe.ran|not))
+          then "iteration \($it.pass): identity edited but the edge re-probe never ran"
+          else empty end ),
     (if ($sc.iterations|length) >= 1 then empty else "no iterations recorded" end),
     (if ($sc.iterations[-1].average >= $th) then empty
      else "final iteration is below threshold" end),
@@ -132,6 +152,14 @@ grep -q 'rubric_scored' "$SKILL"       || fail "SKILL.md does not require rubric
 grep -q 'Edge re-probe' "$SKILL"       || fail "SKILL.md does not document the mandatory edge re-probe"
 grep -qi 'never gates\|reported only' "$SKILL" \
   || fail "SKILL.md does not state that voice_fidelity is reported-only and never gates"
+grep -q 'ACCEPTED WITH DEFECTS' "$SKILL" \
+  || fail "SKILL.md does not distinguish an accepted run carrying defects from a clean one"
+grep -q 'PROXYME_SCORECARDS' "$SKILL" \
+  || fail "SKILL.md does not say where the scorecard is written"
+grep -qi 'never overwrite\|does not overwrite' "$SKILL" \
+  || fail "SKILL.md does not require successive scorecards to be kept side by side"
+grep -q 'rubric_scored' "$SKILL" \
+  || fail "SKILL.md does not require rubric_scored on the scorecard"
 
 echo "PASS: gating rubric, rubric_scored provenance, 8.5/10 threshold, accept/iterate logic,"
 echo "      edge re-probe with repaired self-inflicted defects, and anti-overfit invariant verified"

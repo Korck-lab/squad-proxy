@@ -1,6 +1,6 @@
 {
   "name": "proxyme",
-  "version": "0.7.8",
+  "version": "0.7.9",
   "description": "Spawn a read-only, ephemeral, one-shot proxy briefed with your identity — extracted from your real Claude Code sessions — that answers a single question with your authority and then terminates; purely reactive, scoped to your working directory, while the main agent does all the work.",
   "author": {
     "name": "proxyme contributors"

@@ -103,6 +103,8 @@
       "pass": 1,
       "average": 9.2,
       "accepted": true,
+      "defects_reported": 4,
+      "adjustments_applied": true,
       "general_identity_adjustment": "Passed the gating threshold, but the critic still surfaced four technical defects the score did not block on: a secret-debugging rule that forbade raw values then proposed a raw substring; a census-vs-probe rule that did not generalise from code to data; an observability reflex coupled to GPU jobs only; and verification numbers being written into an explicitly ephemeral handoff. Four GENERAL rules were added — no question/answer pair copied into the file.",
       "lesson": "Reaching the threshold is not the same as being defect-free. A passing average can hide defects that only a targeted pass finds."
     },
@@ -110,6 +112,8 @@
       "pass": 2,
       "average": 9.0,
       "accepted": true,
+      "defects_reported": 0,
+      "adjustments_applied": true,
       "general_identity_adjustment": "All four defects verified FIXED against four scenario-different questions. Two NEW defects introduced by the fixes themselves were caught by the edge re-probe and repaired.",
       "lesson": "A rule added to fix one defect can contradict a rule already in the file."
     }

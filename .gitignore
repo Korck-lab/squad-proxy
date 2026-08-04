@@ -18,6 +18,9 @@ graphify-out/
 .remember/
 claudei.sh
 AGENTS.md
+# …except the plugin's own, which ships with the plugin and is one of the files
+# proxyme-paths.test.sh reads: untracked, the suite fails on a fresh clone.
+!proxyme/AGENTS.md
 
 # Docs are local working material, except the two shared, durable records.
 # Note the `docs/*` form: git cannot re-include a path whose parent directory
